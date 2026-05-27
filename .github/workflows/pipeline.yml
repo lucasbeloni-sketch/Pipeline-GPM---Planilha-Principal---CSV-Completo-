@@ -19,6 +19,7 @@ jobs:
     env:
       TZ: America/Sao_Paulo
       PYTHONUNBUFFERED: '1'
+      GOOGLE_CREDENTIALS_B64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
 
     steps:
       - name: Checkout do repositório
@@ -45,14 +46,3 @@ jobs:
 
       - name: 3) Compilador planilha principal
         run: python compilador_planilha_principal.py
-
-      # Opcional: comitar arquivos gerados pelos scripts de volta no repo.
-      # Descomente o bloco abaixo se os scripts produzirem arquivos que você queira versionar.
-      #
-      # - name: Comitar arquivos gerados
-      #   run: |
-      #     git config user.name  "github-actions[bot]"
-      #     git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      #     git add -A
-      #     git diff --staged --quiet || git commit -m "Atualização automática $(date '+%Y-%m-%d %H:%M')"
-      #     git push

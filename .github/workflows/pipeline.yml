@@ -1,0 +1,58 @@
+name: Pipeline GPM - Planilha Principal
+
+on:
+  schedule:
+    # Horários em UTC (Brasília = UTC-3)
+    - cron: '30 7 * * *'   # 04:30 BRT
+    - cron: '30 9 * * *'   # 06:30 BRT
+    - cron: '30 11 * * *'  # 08:30 BRT
+    - cron: '30 15 * * *'  # 12:30 BRT
+    - cron: '30 23 * * *'  # 20:30 BRT
+    - cron: '30 1 * * *'   # 22:30 BRT (do dia anterior em UTC)
+  workflow_dispatch:        # Permite rodar manualmente pelo painel do GitHub
+
+jobs:
+  rodar-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      TZ: America/Sao_Paulo
+      PYTHONUNBUFFERED: '1'
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: 1) Compilador consulta serviços GPM
+        run: python compilador_consulta_servicos_GPM.py
+
+      - name: 2) Bloco 3 - Planilha principal
+        run: python bloco3_plan_principal.py
+
+      - name: 3) Compilador planilha principal
+        run: python compilador_planilha_principal.py
+
+      # Opcional: comitar arquivos gerados pelos scripts de volta no repo.
+      # Descomente o bloco abaixo se os scripts produzirem arquivos que você queira versionar.
+      #
+      # - name: Comitar arquivos gerados
+      #   run: |
+      #     git config user.name  "github-actions[bot]"
+      #     git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      #     git add -A
+      #     git diff --staged --quiet || git commit -m "Atualização automática $(date '+%Y-%m-%d %H:%M')"
+      #     git push

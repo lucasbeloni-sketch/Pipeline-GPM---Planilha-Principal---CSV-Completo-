@@ -13,17 +13,14 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from googleapiclient.errors import HttpError
-
 # =========================
 # CONFIGURAÇÕES
 # =========================
 FOLDER_ID = "1f5Z0f73IZD4rBEssNb9OVtADLVZzttaF"
 DEST_FOLDER_ID = "1QvBJJDh5UzcewdU8EYl2OscVEYkhWtO-"
 DEST_CSV_NAME = "COMPILADO.csv"
-
 CSV_START_ROW = 3
 CSV_START_COL = 1  # A
-
 SOURCE_SPREADSHEET_IDS = [
     "1OTHF2ytEOjGgfE49paARXkz9GjaklOQC_UhiXwUjC2E",
     "1rj2V7CxbZwkan63eCeLkH9G00Gi041IZNC6vwEgq6yI",
@@ -39,19 +36,18 @@ SOURCE_SPREADSHEET_IDS = [
 ]
 SOURCE_SHEET_NAME = "Plan_Principal"
 SOURCE_RANGE_A1 = "B5:BX"
-
+# >>> NOVO: destino do timestamp de execução
+TIMESTAMP_SPREADSHEET_ID = "1-_lTKT4wSDlJtTXkF1tLHstV9h-S3Yq_2cE8jOIC3kI"
+TIMESTAMP_SHEET_NAME = "BD_Config"
+TIMESTAMP_CELL = "C6"
 SCOPES = [
     "https://www.googleapis.com/auth/drive",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/spreadsheets",
 ]
 LOCAL_CREDENTIALS_FILE = "service_account.json"
-
 API_TIMEOUT_SECONDS = 300
 API_MAX_RETRIES = 5
-
 socket.setdefaulttimeout(API_TIMEOUT_SECONDS)
-
-
 # =========================
 # EXECUÇÃO COM RETRY
 # =========================
@@ -77,8 +73,6 @@ def execute_with_retries(request, description: str = "requisição"):
             print(f"Timeout/erro de rede em {description}. Tentando novamente em {wait_seconds}s...")
             time.sleep(wait_seconds)
     raise last_error
-
-
 # =========================
 # CSV - AUMENTA LIMITE
 # =========================
@@ -92,10 +86,7 @@ def configure_csv_field_limit():
             return configured
         except OverflowError:
             limit //= 10
-
 configure_csv_field_limit()
-
-
 # =========================
 # UTILITÁRIOS
 # =========================
@@ -103,22 +94,17 @@ def cell_has_value(cell: Any) -> bool:
     if cell is None:
         return False
     return str(cell).strip() != ""
-
 def row_has_any_value(row: List[Any]) -> bool:
     return any(cell_has_value(cell) for cell in row)
-
 def remove_fully_blank_rows(values: List[List[Any]]) -> List[List[Any]]:
     return [row for row in values if row_has_any_value(row)]
-
 def filter_rows_where_first_column_has_value(values: List[List[Any]]) -> List[List[Any]]:
     return [row for row in values if cell_has_value(row[0] if row else "")]
-
 def column_letter_to_number(letter: str) -> int:
     result = 0
     for char in letter.upper():
         result = result * 26 + (ord(char) - ord("A") + 1)
     return result
-
 def get_range_width(a1_range: str) -> int:
     match = re.match(r"([A-Z]+)\d*:([A-Z]+)", a1_range.upper())
     if not match:
@@ -126,14 +112,11 @@ def get_range_width(a1_range: str) -> int:
     start_col = column_letter_to_number(match.group(1))
     end_col = column_letter_to_number(match.group(2))
     return end_col - start_col + 1
-
 def pad_rows_to_width(values: List[List[Any]], width: int) -> List[List[Any]]:
     return [
         (list(row) + [""] * (width - len(row)))[:width]
         for row in values
     ]
-
-
 # =========================
 # ÍNDICES DE FORMATAÇÃO
 # =========================
@@ -148,8 +131,6 @@ FORMAT_DURATION_COLUMNS = [
     column_letter_to_number(c) - 1
     for c in ["BK", "BL", "BM", "BN", "BO"]
 ]
-
-
 # =========================
 # NORMALIZAÇÃO NUMÉRICA
 # =========================
@@ -162,7 +143,6 @@ def is_grouped_thousands(value: str, sep: str) -> bool:
     if not (1 <= len(parts[0]) <= 3):
         return False
     return all(len(part) == 3 for part in parts[1:])
-
 def normalize_numeric_string(value: Any):
     if value is None:
         return ""
@@ -223,8 +203,6 @@ def normalize_numeric_string(value: Any):
         return number
     except ValueError:
         return original
-
-
 # =========================
 # AUTENTICAÇÃO
 # =========================
@@ -240,14 +218,11 @@ def get_credentials() -> Credentials:
     raise FileNotFoundError(
         "Credenciais não encontradas. Defina GOOGLE_CREDENTIALS_B64 ou adicione service_account.json."
     )
-
 def get_services():
     creds = get_credentials()
     drive_service = build("drive", "v3", credentials=creds)
     sheets_service = build("sheets", "v4", credentials=creds)
     return drive_service, sheets_service
-
-
 # =========================
 # GOOGLE DRIVE - LEITURA
 # =========================
@@ -273,7 +248,6 @@ def list_csv_files_in_folder(drive_service, folder_id: str) -> List[Dict[str, st
             break
     files.sort(key=lambda x: x["name"].lower())
     return files
-
 def download_csv_content(drive_service, file_id: str) -> str:
     request = drive_service.files().get_media(fileId=file_id)
     buffer = io.BytesIO()
@@ -288,8 +262,6 @@ def download_csv_content(drive_service, file_id: str) -> str:
         except UnicodeDecodeError:
             continue
     return raw_content.decode("utf-8", errors="replace")
-
-
 # =========================
 # GOOGLE DRIVE - UPLOAD
 # =========================
@@ -306,7 +278,6 @@ def find_existing_file_in_folder(drive_service, folder_id: str, filename: str) -
     )
     files = response.get("files", [])
     return files[0]["id"] if files else None
-
 def get_first_csv_row_raw(existing_content: str) -> str:
     """Extrai a primeira linha do CSV respeitando campos com quebras de linha entre aspas."""
     reader = csv.reader(io.StringIO(existing_content, newline=""), delimiter=";")
@@ -318,7 +289,6 @@ def get_first_csv_row_raw(existing_content: str) -> str:
     writer = csv.writer(buf, delimiter=";", lineterminator="\n")
     writer.writerow(first_row)
     return buf.getvalue().rstrip("\n")
-
 def upload_csv_to_drive(
     drive_service,
     folder_id: str,
@@ -326,23 +296,19 @@ def upload_csv_to_drive(
     rows: List[List[Any]]
 ):
     existing_id = find_existing_file_in_folder(drive_service, folder_id, filename)
-
     first_line = ""
     if existing_id:
         print(f"Arquivo '{filename}' encontrado. Preservando linha 1...")
         existing_content = download_csv_content(drive_service, existing_id)
         first_line = get_first_csv_row_raw(existing_content)
-
     buffer = io.StringIO()
     if first_line:
         buffer.write(first_line + "\n")
     writer = csv.writer(buffer, delimiter=";", lineterminator="\n")
     for row in rows:
         writer.writerow([str(cell) if cell is not None else "" for cell in row])
-
     csv_bytes = buffer.getvalue().encode("utf-8-sig")
     media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype="text/csv", resumable=True)
-
     if existing_id:
         print(f"Substituindo conteúdo de '{filename}' a partir da linha 2...")
         execute_with_retries(
@@ -370,8 +336,6 @@ def upload_csv_to_drive(
             description=f"criação do arquivo '{filename}'"
         )
     print(f"Arquivo '{filename}' salvo com sucesso.")
-
-
 # =========================
 # CSV / CONSOLIDAÇÃO
 # =========================
@@ -388,7 +352,6 @@ def detect_csv_dialect(csv_text: str):
             lineterminator = "\n"
             quoting = csv.QUOTE_MINIMAL
         return SimpleDialect
-
 def parse_csv_text(csv_text: str) -> List[List[str]]:
     dialect = detect_csv_dialect(csv_text)
     reader = csv.reader(io.StringIO(csv_text, newline=""), dialect=dialect)
@@ -397,10 +360,8 @@ def parse_csv_text(csv_text: str) -> List[List[str]]:
         for row in reader
         if row_has_any_value(row)
     ]
-
 def normalize_header(header: List[str]) -> List[str]:
     return [str(col).strip().lower() for col in header]
-
 def merge_csvs(file_contents: List[str]) -> List[List[str]]:
     merged_rows: List[List[str]] = []
     first_header_normalized = None
@@ -422,8 +383,6 @@ def merge_csvs(file_contents: List[str]) -> List[List[str]]:
         return []
     max_cols = max(len(row) for row in merged_rows)
     return [row + [""] * (max_cols - len(row)) for row in merged_rows]
-
-
 # =========================
 # GOOGLE SHEETS - LEITURA
 # =========================
@@ -445,7 +404,6 @@ def get_sheet_range_values(
         description=f"leitura de {full_range}"
     )
     return response.get("values", [])
-
 def collect_source_sheets_data(
     sheets_service,
     spreadsheet_ids: List[str],
@@ -469,8 +427,24 @@ def collect_source_sheets_data(
         except Exception as e:
             print(f" - Erro ao ler {spreadsheet_id}: {e}")
     return all_rows
-
-
+# =========================
+# GOOGLE SHEETS - ESCRITA DE TIMESTAMP
+# =========================
+def write_execution_timestamp(sheets_service):
+    """Grava o timestamp da execução em BD_Config!C6 da planilha de controle."""
+    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    target_range = f"{TIMESTAMP_SHEET_NAME}!{TIMESTAMP_CELL}"
+    print(f"Gravando timestamp '{timestamp}' em {target_range}...")
+    execute_with_retries(
+        sheets_service.spreadsheets().values().update(
+            spreadsheetId=TIMESTAMP_SPREADSHEET_ID,
+            range=target_range,
+            valueInputOption="USER_ENTERED",
+            body={"values": [[timestamp]]}
+        ),
+        description=f"gravação do timestamp em {target_range}"
+    )
+    print("Timestamp gravado com sucesso.")
 # =========================
 # NORMALIZAÇÃO E FORMATAÇÃO
 # =========================
@@ -482,14 +456,12 @@ def normalize_rows(values: List[List[Any]], skip_first_row: bool = False) -> Lis
         else:
             result.append([normalize_numeric_string(cell) for cell in row])
     return result
-
 def format_date_value(value: Any) -> Any:
     """Extrai apenas dd/mm/yyyy de strings como '30/06/2026 - terça-feira'."""
     if not isinstance(value, str):
         return value
     match = re.match(r"(\d{2}/\d{2}/\d{4})", value.strip())
     return match.group(1) if match else value
-
 def format_number_value(value: Any) -> Any:
     """Converte decimal com ponto para vírgula (padrão brasileiro)."""
     if isinstance(value, float):
@@ -501,7 +473,6 @@ def format_number_value(value: Any) -> Any:
         if re.fullmatch(r"-?\d+\.\d+", s):
             return s.replace(".", ",")
     return value
-
 def apply_column_formats(rows: List[List[Any]]) -> List[List[Any]]:
     """Aplica formatações específicas por coluna, ignorando o cabeçalho (linha 0)."""
     result = []
@@ -519,7 +490,6 @@ def apply_column_formats(rows: List[List[Any]]) -> List[List[Any]]:
         # Colunas de duração (BK–BO) chegam como "HH:MM:SS" do Sheets — sem transformação
         result.append(new_row)
     return result
-
 def remove_duplicate_rows(rows: List[List[Any]]) -> List[List[Any]]:
     """Remove linhas duplicadas mantendo a primeira ocorrência."""
     seen = set()
@@ -530,34 +500,27 @@ def remove_duplicate_rows(rows: List[List[Any]]) -> List[List[Any]]:
             seen.add(key)
             result.append(row)
     return result
-
-
 # =========================
 # MAIN
 # =========================
 def main():
     drive_service, sheets_service = get_services()
     all_rows: List[List[Any]] = []
-
     # -------------------------------------------------
     # 1) CONSOLIDA CSVs
     # -------------------------------------------------
     print("Listando arquivos CSV na pasta...")
     files = list_csv_files_in_folder(drive_service, FOLDER_ID)
-
     if files:
         print(f"{len(files)} arquivo(s) CSV encontrado(s):")
         for f in files:
             print(f" - {f['name']}")
-
         csv_contents = []
         for f in files:
             print(f"Baixando: {f['name']}")
             csv_contents.append(download_csv_content(drive_service, f["id"]))
-
         print("Mesclando arquivos CSV...")
         merged_csv_data = merge_csvs(csv_contents)
-
         if merged_csv_data:
             print(f"Linhas dos CSVs antes da limpeza: {len(merged_csv_data)}")
             merged_csv_data = remove_fully_blank_rows(merged_csv_data)
@@ -568,7 +531,6 @@ def main():
             print("Nenhum dado útil encontrado nos CSVs.")
     else:
         print("Nenhum arquivo CSV encontrado na pasta.")
-
     # -------------------------------------------------
     # 2) LÊ PLAN_PRINCIPAL!B5:BX DAS PLANILHAS DE ORIGEM
     # -------------------------------------------------
@@ -579,7 +541,6 @@ def main():
         sheet_name=SOURCE_SHEET_NAME,
         range_a1=SOURCE_RANGE_A1
     )
-
     if source_raw_rows:
         print(f"Linhas coletadas das planilhas de origem: {len(source_raw_rows)}")
         source_raw_rows = normalize_rows(source_raw_rows, skip_first_row=False)
@@ -588,22 +549,18 @@ def main():
         all_rows.extend(source_raw_rows)
     else:
         print("Nenhum dado encontrado nas planilhas de origem.")
-
     # -------------------------------------------------
     # 3) SALVA COMO CSV NO GOOGLE DRIVE
     # -------------------------------------------------
     if not all_rows:
         print("Nenhum dado para salvar. Encerrando.")
         return
-
     print("Aplicando formatações de coluna...")
     all_rows = apply_column_formats(all_rows)
-
     print("Removendo linhas duplicadas...")
     before = len(all_rows)
     all_rows = remove_duplicate_rows(all_rows)
     print(f"Linhas removidas por duplicidade: {before - len(all_rows)}")
-
     print("Ordenando por coluna A (A-Z)...")
     if all_rows:
         def sort_key(row):
@@ -612,9 +569,7 @@ def main():
                 return (0, datetime.strptime(val, "%d/%m/%Y"), "")
             except ValueError:
                 return (1, datetime.min, val.lower())
-
         all_rows = sorted(all_rows, key=sort_key)
-
     print(f"Total de linhas a salvar: {len(all_rows)}")
     print(f"Fazendo upload de '{DEST_CSV_NAME}' para a pasta {DEST_FOLDER_ID}...")
     upload_csv_to_drive(
@@ -623,8 +578,13 @@ def main():
         filename=DEST_CSV_NAME,
         rows=all_rows
     )
+    # -------------------------------------------------
+    # 4) GRAVA TIMESTAMP DE EXECUÇÃO
+    # -------------------------------------------------
+    try:
+        write_execution_timestamp(sheets_service)
+    except Exception as e:
+        print(f"Aviso: falha ao gravar timestamp em {TIMESTAMP_SHEET_NAME}!{TIMESTAMP_CELL}: {e}")
     print("Processo concluído com sucesso.")
-
-
 if __name__ == "__main__":
     main()

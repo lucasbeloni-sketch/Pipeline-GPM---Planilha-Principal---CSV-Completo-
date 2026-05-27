@@ -41,8 +41,14 @@ jobs:
       - name: 1) Compilador consulta serviços GPM
         run: python compilador_consulta_servicos_GPM.py
 
+      - name: Aguardar 2 minutos
+        run: sleep 120
+
       - name: 2) Bloco 3 - Planilha principal
         run: python bloco3_plan_principal.py
+
+      - name: Aguardar 2 minutos
+        run: sleep 120
 
       - name: 3) Compilador planilha principal
         run: python compilador_planilha_principal.py

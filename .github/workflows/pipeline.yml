@@ -8,7 +8,7 @@ on:
     - cron: '37 11 * * *'  # 08:37 BRT
     - cron: '23 15 * * *'  # 12:23 BRT
     - cron: '13 23 * * *'  # 20:13 BRT
-    - cron: '43 1 * * *'   # 22:43 BRT (do dia anterior em UTC)
+    - cron: '43 2 * * *'   # 23:43 BRT (do dia anterior em UTC)
   workflow_dispatch:        # Permite rodar manualmente pelo painel do GitHub
 jobs:
   rodar-pipeline:

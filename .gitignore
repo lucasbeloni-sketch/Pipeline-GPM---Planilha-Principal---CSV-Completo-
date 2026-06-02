@@ -1,0 +1,35 @@
+# ==== Credenciais / segredos (NUNCA commitar) ====
+# Variáveis de ambiente locais (ex.: GOOGLE_CREDENTIALS_B64 usado em testes)
+.env
+.env.*
+
+# Padrões comuns de credenciais
+credentials*
+*credentials*
+secret*
+*secret*
+*-key.*
+*.pem
+*.key
+token*
+
+# Ignora JSON por padrão para evitar vazar a service account do Google em .json.
+# Exceção: .mcp.json é config do MCP e NÃO contém segredo (usa ${GITHUB_PAT}).
+*.json
+!.mcp.json
+
+# ==== Python ====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ==== Sistema operacional / editores ====
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

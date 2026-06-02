@@ -1,14 +1,14 @@
 name: Pipeline GPM - Planilha Principal
 on:
-  schedule:
+  #schedule:
     # Horários em UTC (Brasília = UTC-3)
     # Minutos ímpares e fora de pico para reduzir atraso do agendador.
-    - cron: '23 7 * * *'   # 04:23 BRT
-    - cron: '17 9 * * *'   # 06:17 BRT
-    - cron: '37 11 * * *'  # 08:37 BRT
-    - cron: '23 15 * * *'  # 12:23 BRT
-    - cron: '13 23 * * *'  # 20:13 BRT
-    - cron: '43 2 * * *'   # 23:43 BRT (do dia anterior em UTC)
+    #- cron: '23 7 * * *'   # 04:23 BRT
+    #- cron: '17 9 * * *'   # 06:17 BRT
+    #- cron: '37 11 * * *'  # 08:37 BRT
+    #- cron: '23 15 * * *'  # 12:23 BRT
+    #- cron: '13 23 * * *'  # 20:13 BRT
+    #- cron: '43 2 * * *'   # 23:43 BRT (do dia anterior em UTC)
   workflow_dispatch:        # Permite rodar manualmente pelo painel do GitHub
 jobs:
   rodar-pipeline:

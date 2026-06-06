@@ -234,7 +234,8 @@ def parse_date_por_arquivo(df: pd.DataFrame, col_data: str, col_arquivo: str) ->
                 dayfirst=dayfirst
             )
 
-        print(f"[DATA] arquivo_origem={arquivo} | formato_inferido={formato} | amostras_validas={pd.to_datetime(ext_grp, errors='coerce', dayfirst=(formato=='DMY')).notna().sum()}")
+        amostras_validas = parsed_final.loc[idxs].notna().sum()
+        print(f"[DATA] arquivo_origem={arquivo} | formato_inferido={formato} | amostras_validas={amostras_validas}")
 
     return parsed_final
 

@@ -1,6 +1,8 @@
 import os
 import json
+import time
 import base64
+import socket
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -8,6 +10,7 @@ from zoneinfo import ZoneInfo
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+from googleapiclient.errors import HttpError
 
 # =========================
 # CONFIG
@@ -16,6 +19,11 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets",
 ]
+
+LOCAL_CREDENTIALS_FILE = "service_account.json"
+API_TIMEOUT_SECONDS = 300
+API_MAX_RETRIES = 5
+socket.setdefaulttimeout(API_TIMEOUT_SECONDS)
 
 NEW_FOLDER_ID = "1QHtqMNCcIzNihwnu3copkNmBZnaL6Z6z"
 OUTPUT_CSV_NAME = "BANCO.csv"
@@ -35,17 +43,49 @@ READ_CSV_KWARGS = dict(
 KEEP_COL_POS_1BASED = [47, 6, 27, 50, 52, 68, 70]
 
 # =========================
+# EXECUÇÃO COM RETRY
+# =========================
+def execute_with_retries(request, description: str = "requisição"):
+    last_error = None
+    for attempt in range(API_MAX_RETRIES):
+        try:
+            return request.execute(num_retries=2)
+        except HttpError as e:
+            last_error = e
+            status = getattr(e.resp, "status", None)
+            retryable = status in {429, 500, 502, 503, 504}
+            if not retryable or attempt == API_MAX_RETRIES - 1:
+                raise
+            wait_seconds = 2 ** attempt
+            print(f"[AVISO] Falha HTTP em {description} (status={status}). Tentando novamente em {wait_seconds}s...")
+            time.sleep(wait_seconds)
+        except (TimeoutError, socket.timeout, OSError) as e:
+            last_error = e
+            if attempt == API_MAX_RETRIES - 1:
+                raise
+            wait_seconds = 2 ** attempt
+            print(f"[AVISO] Timeout/erro de rede em {description}. Tentando novamente em {wait_seconds}s...")
+            time.sleep(wait_seconds)
+    raise last_error
+
+# =========================
 # AUTH
 # =========================
 def get_credentials():
-    secret = os.getenv("GOOGLE_CREDENTIALS_B64")
-    if not secret:
-        raise ValueError("O secret 'GOOGLE_CREDENTIALS_B64' não foi encontrado!")
+    secret = os.getenv("GOOGLE_CREDENTIALS_B64", "").strip()
+    if secret:
+        print("Usando credenciais da variável GOOGLE_CREDENTIALS_B64...")
+        credentials_json = base64.b64decode(secret).decode("utf-8")
+        info = json.loads(credentials_json)
+        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
 
-    credentials_json = base64.b64decode(secret).decode("utf-8")
-    info = json.loads(credentials_json)
+    if os.path.exists(LOCAL_CREDENTIALS_FILE):
+        print(f"Usando credenciais do arquivo local: {LOCAL_CREDENTIALS_FILE}")
+        return service_account.Credentials.from_service_account_file(LOCAL_CREDENTIALS_FILE, scopes=SCOPES)
 
-    return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
+    raise FileNotFoundError(
+        "Credenciais não encontradas. Defina GOOGLE_CREDENTIALS_B64 ou adicione service_account.json."
+    )
 
 def get_drive_service():
     return build("drive", "v3", credentials=get_credentials())
@@ -62,16 +102,19 @@ def list_files(service, folder_id, drive_id):
     token = None
 
     while True:
-        resp = service.files().list(
-            q=query,
-            pageToken=token,
-            pageSize=1000,
-            fields="nextPageToken, files(id,name,mimeType)",
-            supportsAllDrives=True,
-            includeItemsFromAllDrives=True,
-            corpora="drive",
-            driveId=drive_id,
-        ).execute()
+        resp = execute_with_retries(
+            service.files().list(
+                q=query,
+                pageToken=token,
+                pageSize=1000,
+                fields="nextPageToken, files(id,name,mimeType)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+                corpora="drive",
+                driveId=drive_id,
+            ),
+            description="listagem de arquivos no Drive",
+        )
 
         files.extend(resp.get("files", []))
         token = resp.get("nextPageToken")
@@ -86,20 +129,23 @@ def download_file(service, file_id, filename):
         downloader = MediaIoBaseDownload(f, request)
         done = False
         while not done:
-            _, done = downloader.next_chunk()
+            _, done = downloader.next_chunk(num_retries=2)
 
 def find_file_in_folder(service, folder_id, drive_id, filename):
     query = f"'{folder_id}' in parents and trashed = false and name = '{filename}'"
 
-    resp = service.files().list(
-        q=query,
-        fields="files(id,name)",
-        pageSize=10,
-        supportsAllDrives=True,
-        includeItemsFromAllDrives=True,
-        corpora="drive",
-        driveId=drive_id,
-    ).execute()
+    resp = execute_with_retries(
+        service.files().list(
+            q=query,
+            fields="files(id,name)",
+            pageSize=10,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+            corpora="drive",
+            driveId=drive_id,
+        ),
+        description=f"busca de arquivo existente '{filename}'",
+    )
 
     files = resp.get("files", [])
     return files[0]["id"] if files else None
@@ -109,18 +155,24 @@ def upload_or_update_banco(drive_service, folder_id, drive_id, local_path, filen
     existing_id = find_file_in_folder(drive_service, folder_id, drive_id, filename)
 
     if existing_id:
-        drive_service.files().update(
-            fileId=existing_id,
-            media_body=media,
-            supportsAllDrives=True
-        ).execute()
+        execute_with_retries(
+            drive_service.files().update(
+                fileId=existing_id,
+                media_body=media,
+                supportsAllDrives=True
+            ),
+            description=f"atualização do arquivo '{filename}'",
+        )
         return "updated"
 
-    drive_service.files().create(
-        body={"name": filename, "parents": [folder_id]},
-        media_body=media,
-        supportsAllDrives=True
-    ).execute()
+    execute_with_retries(
+        drive_service.files().create(
+            body={"name": filename, "parents": [folder_id]},
+            media_body=media,
+            supportsAllDrives=True
+        ),
+        description=f"criação do arquivo '{filename}'",
+    )
     return "created"
 
 # =========================
@@ -141,7 +193,7 @@ def to_number_ptbr(value):
         s = s.replace(".", "").replace(",", ".")
     try:
         return float(s)
-    except:
+    except (ValueError, TypeError):
         return 0.0
 
 # =========================
@@ -239,10 +291,13 @@ def parse_date_por_arquivo(df: pd.DataFrame, col_data: str, col_arquivo: str) ->
 # SHEETS HELPERS
 # =========================
 def clear_range(service, spreadsheet_id, range_):
-    service.spreadsheets().values().clear(
-        spreadsheetId=spreadsheet_id,
-        range=range_
-    ).execute()
+    execute_with_retries(
+        service.spreadsheets().values().clear(
+            spreadsheetId=spreadsheet_id,
+            range=range_
+        ),
+        description=f"limpeza do range {range_}",
+    )
 
 def upload_to_sheets(service, df):
     df_sheets = df.iloc[:, :7].copy()
@@ -251,21 +306,27 @@ def upload_to_sheets(service, df):
 
     clear_range(service, SPREADSHEET_ID, f"{SHEET_NAME}!A3:G")
 
-    service.spreadsheets().values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME}!A3",
-        valueInputOption="USER_ENTERED",
-        body={"values": values}
-    ).execute()
+    execute_with_retries(
+        service.spreadsheets().values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME}!A3",
+            valueInputOption="USER_ENTERED",
+            body={"values": values}
+        ),
+        description=f"escrita dos dados em {SHEET_NAME}!A3",
+    )
 
     timestamp = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M:%S")
 
-    service.spreadsheets().values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME}!B1",
-        valueInputOption="USER_ENTERED",
-        body={"values": [[timestamp]]}
-    ).execute()
+    execute_with_retries(
+        service.spreadsheets().values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f"{SHEET_NAME}!B1",
+            valueInputOption="USER_ENTERED",
+            body={"values": [[timestamp]]}
+        ),
+        description=f"escrita do timestamp em {SHEET_NAME}!B1",
+    )
 
 # =========================
 # MAIN
@@ -274,11 +335,14 @@ def main():
     drive_service = get_drive_service()
     sheets_service = get_sheets_service()
 
-    folder = drive_service.files().get(
-        fileId=NEW_FOLDER_ID,
-        fields="id,name,driveId",
-        supportsAllDrives=True
-    ).execute()
+    folder = execute_with_retries(
+        drive_service.files().get(
+            fileId=NEW_FOLDER_ID,
+            fields="id,name,driveId",
+            supportsAllDrives=True
+        ),
+        description="leitura de metadados da pasta de destino",
+    )
 
     drive_id = folder["driveId"]
     print(f"[OK] Pasta: {folder['name']}")
@@ -311,7 +375,7 @@ def main():
     for f in temp_files:
         try:
             os.remove(f)
-        except:
+        except OSError:
             pass
 
     if not dfs:

@@ -2,26 +2,24 @@ import os
 import io
 import csv
 import sys
-import json
-import base64
 import re
-import time
-import socket
 from datetime import datetime
 from typing import List, Dict, Any
-from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
-from googleapiclient.errors import HttpError
+
+from common import load_service_account_credentials, execute_with_retries
 # =========================
 # CONFIGURAÇÕES
 # =========================
-FOLDER_ID = "1f5Z0f73IZD4rBEssNb9OVtADLVZzttaF"
-DEST_FOLDER_ID = "1QvBJJDh5UzcewdU8EYl2OscVEYkhWtO-"
-DEST_CSV_NAME = "COMPILADO.csv"
+# IDs/nomes podem ser sobrescritos por variáveis de ambiente; os valores
+# abaixo são os defaults de produção.
+FOLDER_ID = os.getenv("FOLDER_ID", "1f5Z0f73IZD4rBEssNb9OVtADLVZzttaF")
+DEST_FOLDER_ID = os.getenv("DEST_FOLDER_ID", "1QvBJJDh5UzcewdU8EYl2OscVEYkhWtO-")
+DEST_CSV_NAME = os.getenv("DEST_CSV_NAME", "COMPILADO.csv")
 CSV_START_ROW = 3
 CSV_START_COL = 1  # A
-SOURCE_SPREADSHEET_IDS = [
+_DEFAULT_SOURCE_SPREADSHEET_IDS = [
     "1OTHF2ytEOjGgfE49paARXkz9GjaklOQC_UhiXwUjC2E",
     "1rj2V7CxbZwkan63eCeLkH9G00Gi041IZNC6vwEgq6yI",
     "1oS619l3x_D1mXkvDpw8vs91G6ipZmsK83JqEIwPj7Uk",
@@ -34,45 +32,22 @@ SOURCE_SPREADSHEET_IDS = [
     "1XmpY8mqkRou-CRY68j1ljHH8W8zcROy7wnwMMSfbV7o",
     "1bqGmVwMVvWP7KtyE3gDsLyOtV8Zwvo76AY49HJI7QLk",
 ]
-SOURCE_SHEET_NAME = "Plan_Principal"
-SOURCE_RANGE_A1 = "B5:BX"
-# >>> NOVO: destino do timestamp de execução
-TIMESTAMP_SPREADSHEET_ID = "1-_lTKT4wSDlJtTXkF1tLHstV9h-S3Yq_2cE8jOIC3kI"
-TIMESTAMP_SHEET_NAME = "BD_Config"
-TIMESTAMP_CELL = "C6"
+# SOURCE_SPREADSHEET_IDS aceita uma lista separada por vírgulas via env var.
+SOURCE_SPREADSHEET_IDS = [
+    s.strip()
+    for s in os.getenv("SOURCE_SPREADSHEET_IDS", ",".join(_DEFAULT_SOURCE_SPREADSHEET_IDS)).split(",")
+    if s.strip()
+]
+SOURCE_SHEET_NAME = os.getenv("SOURCE_SHEET_NAME", "Plan_Principal")
+SOURCE_RANGE_A1 = os.getenv("SOURCE_RANGE_A1", "B5:BX")
+# Destino do timestamp de execução
+TIMESTAMP_SPREADSHEET_ID = os.getenv("TIMESTAMP_SPREADSHEET_ID", "1-_lTKT4wSDlJtTXkF1tLHstV9h-S3Yq_2cE8jOIC3kI")
+TIMESTAMP_SHEET_NAME = os.getenv("TIMESTAMP_SHEET_NAME", "BD_Config")
+TIMESTAMP_CELL = os.getenv("TIMESTAMP_CELL", "C6")
 SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/spreadsheets",
 ]
-LOCAL_CREDENTIALS_FILE = "service_account.json"
-API_TIMEOUT_SECONDS = 300
-API_MAX_RETRIES = 5
-socket.setdefaulttimeout(API_TIMEOUT_SECONDS)
-# =========================
-# EXECUÇÃO COM RETRY
-# =========================
-def execute_with_retries(request, description: str = "requisição"):
-    last_error = None
-    for attempt in range(API_MAX_RETRIES):
-        try:
-            return request.execute(num_retries=2)
-        except HttpError as e:
-            last_error = e
-            status = getattr(e.resp, "status", None)
-            retryable = status in {429, 500, 502, 503, 504}
-            if not retryable or attempt == API_MAX_RETRIES - 1:
-                raise
-            wait_seconds = 2 ** attempt
-            print(f"Falha HTTP em {description} (status={status}). Tentando novamente em {wait_seconds}s...")
-            time.sleep(wait_seconds)
-        except (TimeoutError, socket.timeout, OSError) as e:
-            last_error = e
-            if attempt == API_MAX_RETRIES - 1:
-                raise
-            wait_seconds = 2 ** attempt
-            print(f"Timeout/erro de rede em {description}. Tentando novamente em {wait_seconds}s...")
-            time.sleep(wait_seconds)
-    raise last_error
 # =========================
 # CSV - AUMENTA LIMITE
 # =========================
@@ -206,20 +181,8 @@ def normalize_numeric_string(value: Any):
 # =========================
 # AUTENTICAÇÃO
 # =========================
-def get_credentials() -> Credentials:
-    credentials_b64 = os.getenv("GOOGLE_CREDENTIALS_B64")
-    if credentials_b64:
-        print("Usando credenciais da variável GOOGLE_CREDENTIALS_B64...")
-        credentials_info = json.loads(base64.b64decode(credentials_b64).decode("utf-8"))
-        return Credentials.from_service_account_info(credentials_info, scopes=SCOPES)
-    if os.path.exists(LOCAL_CREDENTIALS_FILE):
-        print(f"Usando credenciais do arquivo local: {LOCAL_CREDENTIALS_FILE}")
-        return Credentials.from_service_account_file(LOCAL_CREDENTIALS_FILE, scopes=SCOPES)
-    raise FileNotFoundError(
-        "Credenciais não encontradas. Defina GOOGLE_CREDENTIALS_B64 ou adicione service_account.json."
-    )
 def get_services():
-    creds = get_credentials()
+    creds = load_service_account_credentials(SCOPES)
     drive_service = build("drive", "v3", credentials=creds)
     sheets_service = build("sheets", "v4", credentials=creds)
     return drive_service, sheets_service

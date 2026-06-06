@@ -1,5 +1,3 @@
-import base64
-import json
 import os
 import time
 import traceback
@@ -7,9 +5,10 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import gspread
-from google.oauth2.service_account import Credentials
 from gspread.exceptions import APIError, WorksheetNotFound
 from gspread.utils import rowcol_to_a1, a1_to_rowcol
+
+from common import load_service_account_credentials
 
 
 # =========================================================
@@ -47,21 +46,7 @@ def get_gspread_client() -> gspread.Client:
     1) Secret GOOGLE_CREDENTIALS_B64 no GitHub Actions
     2) Arquivo local service_account.json, para teste local
     """
-    credentials_b64 = os.getenv("GOOGLE_CREDENTIALS_B64", "").strip()
-
-    if credentials_b64:
-        service_account_info = json.loads(base64.b64decode(credentials_b64).decode("utf-8"))
-        credentials = Credentials.from_service_account_info(
-            service_account_info,
-            scopes=SCOPES,
-        )
-    else:
-        credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "service_account.json")
-        credentials = Credentials.from_service_account_file(
-            credentials_path,
-            scopes=SCOPES,
-        )
-
+    credentials = load_service_account_credentials(SCOPES)
     return gspread.authorize(credentials)
 
 

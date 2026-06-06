@@ -1,16 +1,12 @@
 import os
-import json
-import time
-import base64
-import socket
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
-from googleapiclient.errors import HttpError
+
+from common import load_service_account_credentials, execute_with_retries
 
 # =========================
 # CONFIG
@@ -20,18 +16,15 @@ SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
 
-LOCAL_CREDENTIALS_FILE = "service_account.json"
-API_TIMEOUT_SECONDS = 300
-API_MAX_RETRIES = 5
-socket.setdefaulttimeout(API_TIMEOUT_SECONDS)
+# IDs/nomes podem ser sobrescritos por variáveis de ambiente; os valores
+# abaixo são os defaults de produção.
+NEW_FOLDER_ID = os.getenv("CONSULTA_NEW_FOLDER_ID", "1QHtqMNCcIzNihwnu3copkNmBZnaL6Z6z")
+OUTPUT_CSV_NAME = os.getenv("CONSULTA_OUTPUT_CSV_NAME", "BANCO.csv")
+FOLDER_ID = os.getenv("CONSULTA_FOLDER_ID", "17IobcQeVLs83rUCqWKTi18yXiAPbupjf")
+SPREADSHEET_ID = os.getenv("CONSULTA_SPREADSHEET_ID", "189JPWONK4hSpziocviwSQOtj59rWl9tbhkVvrxb6Lds")
+SHEET_NAME = os.getenv("CONSULTA_SHEET_NAME", "BD_ConsultaServ")
 
-NEW_FOLDER_ID = "1QHtqMNCcIzNihwnu3copkNmBZnaL6Z6z"
-OUTPUT_CSV_NAME = "BANCO.csv"
-FOLDER_ID = "17IobcQeVLs83rUCqWKTi18yXiAPbupjf"
-SPREADSHEET_ID = "189JPWONK4hSpziocviwSQOtj59rWl9tbhkVvrxb6Lds"
-SHEET_NAME = "BD_ConsultaServ"
-
-UPLOAD_BANCO_PARA_DRIVE = True
+UPLOAD_BANCO_PARA_DRIVE = os.getenv("UPLOAD_BANCO_PARA_DRIVE", "true").strip().lower() in {"1", "true", "yes"}
 
 READ_CSV_KWARGS = dict(
     dtype=str,
@@ -43,55 +36,13 @@ READ_CSV_KWARGS = dict(
 KEEP_COL_POS_1BASED = [47, 6, 27, 50, 52, 68, 70]
 
 # =========================
-# EXECUÇÃO COM RETRY
-# =========================
-def execute_with_retries(request, description: str = "requisição"):
-    last_error = None
-    for attempt in range(API_MAX_RETRIES):
-        try:
-            return request.execute(num_retries=2)
-        except HttpError as e:
-            last_error = e
-            status = getattr(e.resp, "status", None)
-            retryable = status in {429, 500, 502, 503, 504}
-            if not retryable or attempt == API_MAX_RETRIES - 1:
-                raise
-            wait_seconds = 2 ** attempt
-            print(f"[AVISO] Falha HTTP em {description} (status={status}). Tentando novamente em {wait_seconds}s...")
-            time.sleep(wait_seconds)
-        except (TimeoutError, socket.timeout, OSError) as e:
-            last_error = e
-            if attempt == API_MAX_RETRIES - 1:
-                raise
-            wait_seconds = 2 ** attempt
-            print(f"[AVISO] Timeout/erro de rede em {description}. Tentando novamente em {wait_seconds}s...")
-            time.sleep(wait_seconds)
-    raise last_error
-
-# =========================
 # AUTH
 # =========================
-def get_credentials():
-    secret = os.getenv("GOOGLE_CREDENTIALS_B64", "").strip()
-    if secret:
-        print("Usando credenciais da variável GOOGLE_CREDENTIALS_B64...")
-        credentials_json = base64.b64decode(secret).decode("utf-8")
-        info = json.loads(credentials_json)
-        return service_account.Credentials.from_service_account_info(info, scopes=SCOPES)
-
-    if os.path.exists(LOCAL_CREDENTIALS_FILE):
-        print(f"Usando credenciais do arquivo local: {LOCAL_CREDENTIALS_FILE}")
-        return service_account.Credentials.from_service_account_file(LOCAL_CREDENTIALS_FILE, scopes=SCOPES)
-
-    raise FileNotFoundError(
-        "Credenciais não encontradas. Defina GOOGLE_CREDENTIALS_B64 ou adicione service_account.json."
-    )
-
 def get_drive_service():
-    return build("drive", "v3", credentials=get_credentials())
+    return build("drive", "v3", credentials=load_service_account_credentials(SCOPES))
 
 def get_sheets_service():
-    return build("sheets", "v4", credentials=get_credentials())
+    return build("sheets", "v4", credentials=load_service_account_credentials(SCOPES))
 
 # =========================
 # DRIVE HELPERS

@@ -1,11 +1,10 @@
-# Faixas conservadoras: limite inferior testado e teto no próximo major
-# para evitar quebras por atualização automática no CI.
-# Após uma execução bem-sucedida do pipeline, recomenda-se fixar as versões
-# exatas (==) a partir de `pip freeze` para reprodutibilidade total.
-google-api-python-client>=2.100,<3
-google-auth>=2.23,<3
-google-auth-oauthlib>=1.0,<2
-google-auth-httplib2>=0.2,<1
-gspread>=5.12,<7
-pandas>=2.0,<3
-numpy>=1.24,<3
+# Versões fixadas a partir de uma execução bem-sucedida do pipeline no CI
+# (GitHub Actions, Python 3.11). Para atualizar: rode o pipeline, confirme o
+# sucesso e refixe via `pip freeze`.
+google-api-python-client==2.197.0
+google-auth==2.53.0
+google-auth-oauthlib==1.4.0
+google-auth-httplib2==0.4.0
+gspread==6.2.1
+pandas==2.3.3
+numpy==2.4.6

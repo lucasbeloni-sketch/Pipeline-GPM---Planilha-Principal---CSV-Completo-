@@ -1,5 +1,7 @@
 # Pipeline GPM — Planilha Principal
 
+[![Testes](https://github.com/lucasbeloni-sketch/Pipeline-GPM---Planilha-Principal---CSV-Completo-/actions/workflows/tests.yml/badge.svg)](https://github.com/lucasbeloni-sketch/Pipeline-GPM---Planilha-Principal---CSV-Completo-/actions/workflows/tests.yml)
+
 Pipeline de consolidação de dados que integra Google Sheets e Google Drive,
 orquestrado por GitHub Actions. Lê dados de múltiplas planilhas de origem,
 aplica fórmulas/normalizações e grava CSVs consolidados no Drive.

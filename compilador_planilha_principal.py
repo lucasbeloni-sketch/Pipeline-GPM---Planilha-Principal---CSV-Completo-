@@ -3,6 +3,7 @@ import io
 import csv
 import sys
 import re
+import logging
 from datetime import datetime
 from typing import List, Dict, Any
 from googleapiclient.discovery import build
@@ -57,7 +58,7 @@ def configure_csv_field_limit():
         try:
             csv.field_size_limit(limit)
             configured = csv.field_size_limit()
-            print(f"Limite do CSV configurado para: {configured}")
+            logging.info(f"Limite do CSV configurado para: {configured}")
             return configured
         except OverflowError:
             limit //= 10
@@ -261,7 +262,7 @@ def upload_csv_to_drive(
     existing_id = find_existing_file_in_folder(drive_service, folder_id, filename)
     first_line = ""
     if existing_id:
-        print(f"Arquivo '{filename}' encontrado. Preservando linha 1...")
+        logging.info(f"Arquivo '{filename}' encontrado. Preservando linha 1...")
         existing_content = download_csv_content(drive_service, existing_id)
         first_line = get_first_csv_row_raw(existing_content)
     buffer = io.StringIO()
@@ -273,7 +274,7 @@ def upload_csv_to_drive(
     csv_bytes = buffer.getvalue().encode("utf-8-sig")
     media = MediaIoBaseUpload(io.BytesIO(csv_bytes), mimetype="text/csv", resumable=True)
     if existing_id:
-        print(f"Substituindo conteúdo de '{filename}' a partir da linha 2...")
+        logging.info(f"Substituindo conteúdo de '{filename}' a partir da linha 2...")
         execute_with_retries(
             drive_service.files().update(
                 fileId=existing_id,
@@ -283,7 +284,7 @@ def upload_csv_to_drive(
             description=f"atualização do arquivo '{filename}'"
         )
     else:
-        print(f"Criando novo arquivo '{filename}' na pasta {folder_id}...")
+        logging.info(f"Criando novo arquivo '{filename}' na pasta {folder_id}...")
         file_metadata = {
             "name": filename,
             "parents": [folder_id],
@@ -298,7 +299,7 @@ def upload_csv_to_drive(
             ),
             description=f"criação do arquivo '{filename}'"
         )
-    print(f"Arquivo '{filename}' salvo com sucesso.")
+    logging.info(f"Arquivo '{filename}' salvo com sucesso.")
 # =========================
 # CSV / CONSOLIDAÇÃO
 # =========================
@@ -377,18 +378,18 @@ def collect_source_sheets_data(
     expected_width = get_range_width(range_a1)
     for spreadsheet_id in spreadsheet_ids:
         try:
-            print(f"Lendo {sheet_name}!{range_a1} da planilha {spreadsheet_id}...")
+            logging.info(f"Lendo {sheet_name}!{range_a1} da planilha {spreadsheet_id}...")
             rows = get_sheet_range_values(sheets_service, spreadsheet_id, sheet_name, range_a1)
             if not rows:
-                print(f" - Nenhum dado encontrado em {spreadsheet_id}")
+                logging.info(f" - Nenhum dado encontrado em {spreadsheet_id}")
                 continue
             rows = pad_rows_to_width(rows, expected_width)
             rows = remove_fully_blank_rows(rows)
             rows = filter_rows_where_first_column_has_value(rows)
-            print(f" - {len(rows)} linha(s) aproveitada(s)")
+            logging.info(f" - {len(rows)} linha(s) aproveitada(s)")
             all_rows.extend(rows)
         except Exception as e:
-            print(f" - Erro ao ler {spreadsheet_id}: {e}")
+            logging.warning(f"Erro ao ler {spreadsheet_id}: {e}")
     return all_rows
 # =========================
 # GOOGLE SHEETS - ESCRITA DE TIMESTAMP
@@ -397,7 +398,7 @@ def write_execution_timestamp(sheets_service):
     """Grava o timestamp da execução em BD_Config!C6 da planilha de controle."""
     timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     target_range = f"{TIMESTAMP_SHEET_NAME}!{TIMESTAMP_CELL}"
-    print(f"Gravando timestamp '{timestamp}' em {target_range}...")
+    logging.info(f"Gravando timestamp '{timestamp}' em {target_range}...")
     execute_with_retries(
         sheets_service.spreadsheets().values().update(
             spreadsheetId=TIMESTAMP_SPREADSHEET_ID,
@@ -407,7 +408,7 @@ def write_execution_timestamp(sheets_service):
         ),
         description=f"gravação do timestamp em {target_range}"
     )
-    print("Timestamp gravado com sucesso.")
+    logging.info("Timestamp gravado com sucesso.")
 # =========================
 # NORMALIZAÇÃO E FORMATAÇÃO
 # =========================
@@ -472,32 +473,32 @@ def main():
     # -------------------------------------------------
     # 1) CONSOLIDA CSVs
     # -------------------------------------------------
-    print("Listando arquivos CSV na pasta...")
+    logging.info("Listando arquivos CSV na pasta...")
     files = list_csv_files_in_folder(drive_service, FOLDER_ID)
     if files:
-        print(f"{len(files)} arquivo(s) CSV encontrado(s):")
+        logging.info(f"{len(files)} arquivo(s) CSV encontrado(s):")
         for f in files:
-            print(f" - {f['name']}")
+            logging.info(f" - {f['name']}")
         csv_contents = []
         for f in files:
-            print(f"Baixando: {f['name']}")
+            logging.info(f"Baixando: {f['name']}")
             csv_contents.append(download_csv_content(drive_service, f["id"]))
-        print("Mesclando arquivos CSV...")
+        logging.info("Mesclando arquivos CSV...")
         merged_csv_data = merge_csvs(csv_contents)
         if merged_csv_data:
-            print(f"Linhas dos CSVs antes da limpeza: {len(merged_csv_data)}")
+            logging.info(f"Linhas dos CSVs antes da limpeza: {len(merged_csv_data)}")
             merged_csv_data = remove_fully_blank_rows(merged_csv_data)
             merged_csv_data = normalize_rows(merged_csv_data, skip_first_row=True)
-            print(f"Linhas dos CSVs após limpeza: {len(merged_csv_data)}")
+            logging.info(f"Linhas dos CSVs após limpeza: {len(merged_csv_data)}")
             all_rows.extend(merged_csv_data)
         else:
-            print("Nenhum dado útil encontrado nos CSVs.")
+            logging.info("Nenhum dado útil encontrado nos CSVs.")
     else:
-        print("Nenhum arquivo CSV encontrado na pasta.")
+        logging.info("Nenhum arquivo CSV encontrado na pasta.")
     # -------------------------------------------------
     # 2) LÊ PLAN_PRINCIPAL!B5:BX DAS PLANILHAS DE ORIGEM
     # -------------------------------------------------
-    print("Coletando dados das planilhas de origem...")
+    logging.info("Coletando dados das planilhas de origem...")
     source_raw_rows = collect_source_sheets_data(
         sheets_service=sheets_service,
         spreadsheet_ids=SOURCE_SPREADSHEET_IDS,
@@ -505,26 +506,26 @@ def main():
         range_a1=SOURCE_RANGE_A1
     )
     if source_raw_rows:
-        print(f"Linhas coletadas das planilhas de origem: {len(source_raw_rows)}")
+        logging.info(f"Linhas coletadas das planilhas de origem: {len(source_raw_rows)}")
         source_raw_rows = normalize_rows(source_raw_rows, skip_first_row=False)
         source_raw_rows = remove_fully_blank_rows(source_raw_rows)
-        print(f"Linhas das planilhas de origem após limpeza: {len(source_raw_rows)}")
+        logging.info(f"Linhas das planilhas de origem após limpeza: {len(source_raw_rows)}")
         all_rows.extend(source_raw_rows)
     else:
-        print("Nenhum dado encontrado nas planilhas de origem.")
+        logging.info("Nenhum dado encontrado nas planilhas de origem.")
     # -------------------------------------------------
     # 3) SALVA COMO CSV NO GOOGLE DRIVE
     # -------------------------------------------------
     if not all_rows:
-        print("Nenhum dado para salvar. Encerrando.")
+        logging.info("Nenhum dado para salvar. Encerrando.")
         return
-    print("Aplicando formatações de coluna...")
+    logging.info("Aplicando formatações de coluna...")
     all_rows = apply_column_formats(all_rows)
-    print("Removendo linhas duplicadas...")
+    logging.info("Removendo linhas duplicadas...")
     before = len(all_rows)
     all_rows = remove_duplicate_rows(all_rows)
-    print(f"Linhas removidas por duplicidade: {before - len(all_rows)}")
-    print("Ordenando por coluna A (A-Z)...")
+    logging.info(f"Linhas removidas por duplicidade: {before - len(all_rows)}")
+    logging.info("Ordenando por coluna A (A-Z)...")
     if all_rows:
         def sort_key(row):
             val = str(row[0]).strip() if row else ""
@@ -533,8 +534,8 @@ def main():
             except ValueError:
                 return (1, datetime.min, val.lower())
         all_rows = sorted(all_rows, key=sort_key)
-    print(f"Total de linhas a salvar: {len(all_rows)}")
-    print(f"Fazendo upload de '{DEST_CSV_NAME}' para a pasta {DEST_FOLDER_ID}...")
+    logging.info(f"Total de linhas a salvar: {len(all_rows)}")
+    logging.info(f"Fazendo upload de '{DEST_CSV_NAME}' para a pasta {DEST_FOLDER_ID}...")
     upload_csv_to_drive(
         drive_service=drive_service,
         folder_id=DEST_FOLDER_ID,
@@ -547,7 +548,7 @@ def main():
     try:
         write_execution_timestamp(sheets_service)
     except Exception as e:
-        print(f"Aviso: falha ao gravar timestamp em {TIMESTAMP_SHEET_NAME}!{TIMESTAMP_CELL}: {e}")
-    print("Processo concluído com sucesso.")
+        logging.warning(f"Falha ao gravar timestamp em {TIMESTAMP_SHEET_NAME}!{TIMESTAMP_CELL}: {e}")
+    logging.info("Processo concluído com sucesso.")
 if __name__ == "__main__":
     main()

@@ -1,5 +1,6 @@
 import os
 import time
+import logging
 import traceback
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -66,8 +67,8 @@ def executar_com_retry(func, tentativas: int = 5, espera_inicial: float = 2.0):
                 raise
 
             espera = espera_inicial * tentativa
-            print(
-                f"[AVISO] Erro Google API. "
+            logging.warning(
+                f"Erro Google API. "
                 f"Tentativa {tentativa}/{tentativas}. Nova tentativa em {espera:.0f}s."
             )
             time.sleep(espera)
@@ -322,7 +323,7 @@ def formatar_data_hora(worksheet: gspread.Worksheet, range_a1: str) -> None:
             )
         )
     except Exception as erro:
-        print(f"[AVISO] Não foi possível aplicar formato de data/hora em {range_a1}: {erro}")
+        logging.warning(f"Não foi possível aplicar formato de data/hora em {range_a1}: {erro}")
 
 
 def aplicar_formatacoes_fixas_plan_principal(worksheet: gspread.Worksheet) -> None:
@@ -397,9 +398,9 @@ def aplicar_formatacoes_fixas_plan_principal(worksheet: gspread.Worksheet) -> No
                     )
                 )
             except Exception as erro:
-                print(f"[AVISO] Não foi possível aplicar formatação em {range_a1}: {erro}")
+                logging.warning(f"Não foi possível aplicar formatação em {range_a1}: {erro}")
 
-    print("Formatações fixas reaplicadas em Plan_Principal.")
+    logging.info("Formatações fixas reaplicadas em Plan_Principal.")
 
 
 def remover_filtro_basico(spreadsheet: gspread.Spreadsheet, worksheet: gspread.Worksheet) -> None:
@@ -419,9 +420,9 @@ def remover_filtro_basico(spreadsheet: gspread.Spreadsheet, worksheet: gspread.W
         }
 
         executar_com_retry(lambda: spreadsheet.batch_update(request))
-        print("Filtro ativo removido, se existia.")
+        logging.info("Filtro ativo removido, se existia.")
     except Exception as erro:
-        print(f"[AVISO] Não foi possível remover filtro ativo ou não havia filtro: {erro}")
+        logging.warning(f"Não foi possível remover filtro ativo ou não havia filtro: {erro}")
 
 
 def escape_formula_text(texto: str) -> str:
@@ -594,7 +595,7 @@ def executar_bloco3_plan_principal(
 ) -> None:
     aba = abrir_aba(ss_dest, "Plan_Principal")
 
-    print("Atualizando aba Plan_Principal...")
+    logging.info("Atualizando aba Plan_Principal...")
 
     remover_filtro_basico(ss_dest, aba)
 
@@ -602,12 +603,12 @@ def executar_bloco3_plan_principal(
 
     last_row_sheet = ultima_linha_preenchida_da_planilha(aba, "A:BT")
 
-    print(f"Última linha preenchida da Plan_Principal: {last_row_sheet}")
+    logging.info(f"Última linha preenchida da Plan_Principal: {last_row_sheet}")
 
     if last_row_sheet < 6:
         aplicar_formatacoes_fixas_plan_principal(aba)
         finalizar_execucao(aba)
-        print("Nenhuma linha para atualizar a partir da linha 6.")
+        logging.info("Nenhuma linha para atualizar a partir da linha 6.")
         return
 
     # =====================================================
@@ -632,7 +633,7 @@ def executar_bloco3_plan_principal(
     # AL, AM, AO, AQ, AS
     # BE
     # =====================================================
-    print("Aplicando fórmulas iniciais em J:L...")
+    logging.info("Aplicando fórmulas iniciais em J:L...")
     escrever_formulas_matriz(
         worksheet=aba,
         start_row=6,
@@ -640,7 +641,7 @@ def executar_bloco3_plan_principal(
         formulas=[formulas_j_l(row) for row in linhas],
     )
 
-    print("Aplicando fórmulas em AL...")
+    logging.info("Aplicando fórmulas em AL...")
     escrever_formulas_matriz(
         worksheet=aba,
         start_row=6,
@@ -648,7 +649,7 @@ def executar_bloco3_plan_principal(
         formulas=[[formula_al(row)] for row in linhas],
     )
 
-    print("Aplicando fórmulas em AM...")
+    logging.info("Aplicando fórmulas em AM...")
     escrever_formulas_matriz(
         worksheet=aba,
         start_row=6,
@@ -656,7 +657,7 @@ def executar_bloco3_plan_principal(
         formulas=[[formula_am(row)] for row in linhas],
     )
 
-    print("Aplicando fórmulas em AO...")
+    logging.info("Aplicando fórmulas em AO...")
     escrever_formulas_matriz(
         worksheet=aba,
         start_row=6,
@@ -664,7 +665,7 @@ def executar_bloco3_plan_principal(
         formulas=[[formula_ao(row)] for row in linhas],
     )
 
-    print("Aplicando fórmulas em AQ...")
+    logging.info("Aplicando fórmulas em AQ...")
     escrever_formulas_matriz(
         worksheet=aba,
         start_row=6,
@@ -672,7 +673,7 @@ def executar_bloco3_plan_principal(
         formulas=[[formula_aq(row)] for row in linhas],
     )
 
-    print("Aplicando fórmulas em AS...")
+    logging.info("Aplicando fórmulas em AS...")
     escrever_formulas_matriz(
         worksheet=aba,
         start_row=6,
@@ -680,7 +681,7 @@ def executar_bloco3_plan_principal(
         formulas=[[formula_as(row)] for row in linhas],
     )
 
-    print(f'Aplicando fórmulas em BE com valor da BD_Planilhas coluna D: "{valor_be}"')
+    logging.info(f'Aplicando fórmulas em BE com valor da BD_Planilhas coluna D: "{valor_be}"')
     escrever_formulas_matriz(
         worksheet=aba,
         start_row=6,
@@ -688,7 +689,7 @@ def executar_bloco3_plan_principal(
         formulas=[[formula_be(row, valor_be)] for row in linhas],
     )
 
-    print(f"Aguardando cálculo inicial por {CALC_WAIT_SECONDS}s...")
+    logging.info(f"Aguardando cálculo inicial por {CALC_WAIT_SECONDS}s...")
     time.sleep(CALC_WAIT_SECONDS)
 
     # =====================================================
@@ -696,7 +697,7 @@ def executar_bloco3_plan_principal(
     # AN, AP, AR
     # BR:BT
     # =====================================================
-    print("Aplicando fórmulas derivadas em AN, AP e AR...")
+    logging.info("Aplicando fórmulas derivadas em AN, AP e AR...")
 
     escrever_formulas_matriz(
         worksheet=aba,
@@ -719,7 +720,7 @@ def executar_bloco3_plan_principal(
         formulas=[[formulas_derivadas_an_ap_ar(row)[2]] for row in linhas],
     )
 
-    print("Aplicando fórmulas em BR:BT...")
+    logging.info("Aplicando fórmulas em BR:BT...")
     escrever_formulas_matriz(
         worksheet=aba,
         start_row=6,
@@ -727,7 +728,7 @@ def executar_bloco3_plan_principal(
         formulas=[formulas_br_bt(row) for row in linhas],
     )
 
-    print(f"Aguardando cálculo das derivadas por {CALC_WAIT_SECONDS}s...")
+    logging.info(f"Aguardando cálculo das derivadas por {CALC_WAIT_SECONDS}s...")
     time.sleep(CALC_WAIT_SECONDS)
 
     # =====================================================
@@ -735,13 +736,13 @@ def executar_bloco3_plan_principal(
     # AL:AS, J:L, BR:BT
     # BE fica como fórmula, igual ao Apps Script original.
     # =====================================================
-    print("Congelando valores em AL:AS...")
+    logging.info("Congelando valores em AL:AS...")
     congelar_intervalo(aba, f"AL6:AS{last_row_sheet}")
 
-    print("Congelando valores em J:L...")
+    logging.info("Congelando valores em J:L...")
     congelar_intervalo(aba, f"J6:L{last_row_sheet}")
 
-    print("Congelando valores em BR:BT...")
+    logging.info("Congelando valores em BR:BT...")
     congelar_intervalo(aba, f"BR6:BT{last_row_sheet}")
 
     # =====================================================
@@ -754,7 +755,7 @@ def executar_bloco3_plan_principal(
 
     finalizar_execucao(aba)
 
-    print("Plan_Principal atualizada com sucesso.")
+    logging.info("Plan_Principal atualizada com sucesso.")
 
 
 def aplicar_ak_por_coluna_h(
@@ -785,16 +786,16 @@ def aplicar_ak_por_coluna_h(
 
     if last_row_h < 6:
         limpar_intervalos(aba, ["AK6:AK"])
-        print("Coluna H sem dados a partir da linha 6. AK limpa.")
+        logging.info("Coluna H sem dados a partir da linha 6. AK limpa.")
         return
 
-    print(f"Última linha preenchida pela coluna H: {last_row_h}")
+    logging.info(f"Última linha preenchida pela coluna H: {last_row_h}")
 
     limpar_intervalos(aba, [f"AK6:AK{last_row_h}"])
 
     linhas_ak = list(range(6, last_row_h + 1))
 
-    print("Aplicando nova lógica em AK...")
+    logging.info("Aplicando nova lógica em AK...")
     escrever_formulas_matriz(
         worksheet=aba,
         start_row=6,
@@ -802,10 +803,10 @@ def aplicar_ak_por_coluna_h(
         formulas=[[formula_ak(row)] for row in linhas_ak],
     )
 
-    print(f"Aguardando cálculo de AK por {CALC_WAIT_SECONDS}s...")
+    logging.info(f"Aguardando cálculo de AK por {CALC_WAIT_SECONDS}s...")
     time.sleep(CALC_WAIT_SECONDS)
 
-    print("Congelando valores em AK...")
+    logging.info("Congelando valores em AK...")
     congelar_intervalo(aba, f"AK6:AK{last_row_h}")
 
     if last_row_h < last_row_sheet:
@@ -829,13 +830,12 @@ def executar_bloco3_para_planilha(
     indice: int,
     total: int,
 ) -> None:
-    print("")
-    print("=" * 80)
-    print(f"Executando planilha {indice}/{total}")
-    print(f"Nome destino: {nome_planilha}")
-    print(f"ID destino: {dest_spreadsheet_id}")
-    print(f"Valor para Plan_Principal!BE: {valor_be}")
-    print("=" * 80)
+    logging.info("=" * 80)
+    logging.info(f"Executando planilha {indice}/{total}")
+    logging.info(f"Nome destino: {nome_planilha}")
+    logging.info(f"ID destino: {dest_spreadsheet_id}")
+    logging.info(f"Valor para Plan_Principal!BE: {valor_be}")
+    logging.info("=" * 80)
 
     ss_dest = executar_com_retry(lambda: client.open_by_key(dest_spreadsheet_id))
 
@@ -844,7 +844,7 @@ def executar_bloco3_para_planilha(
         valor_be=valor_be,
     )
 
-    print(f"[OK] Bloco 3 concluído: {nome_planilha} | {dest_spreadsheet_id}")
+    logging.info(f"Bloco 3 concluído: {nome_planilha} | {dest_spreadsheet_id}")
 
 
 # =========================================================
@@ -853,7 +853,7 @@ def executar_bloco3_para_planilha(
 def main() -> None:
     inicio = datetime.now(TIMEZONE)
 
-    print(f"Início geral do Bloco 3 - Plan_Principal: {inicio.strftime('%d/%m/%Y %H:%M:%S')}")
+    logging.info(f"Início geral do Bloco 3 - Plan_Principal: {inicio.strftime('%d/%m/%Y %H:%M:%S')}")
 
     client = get_gspread_client()
 
@@ -867,7 +867,7 @@ def main() -> None:
             f"na planilha {LISTA_PLANILHAS_SPREADSHEET_ID}."
         )
 
-    print(f"Total de planilhas encontradas: {len(planilhas)}")
+    logging.info(f"Total de planilhas encontradas: {len(planilhas)}")
 
     sucessos = []
     erros = []
@@ -896,13 +896,12 @@ def main() -> None:
             )
 
         except Exception as erro:
-            print("")
-            print("[ERRO] Falha ao processar uma planilha no Bloco 3.")
-            print(f"Nome: {nome_planilha}")
-            print(f"ID: {dest_spreadsheet_id}")
-            print(f"Valor BE: {valor_be}")
-            print(f"Erro: {erro}")
-            print(traceback.format_exc())
+            logging.error("Falha ao processar uma planilha no Bloco 3.")
+            logging.error(f"Nome: {nome_planilha}")
+            logging.error(f"ID: {dest_spreadsheet_id}")
+            logging.error(f"Valor BE: {valor_be}")
+            logging.error(f"Erro: {erro}")
+            logging.error(traceback.format_exc())
 
             erros.append(
                 {
@@ -918,27 +917,24 @@ def main() -> None:
     fim = datetime.now(TIMEZONE)
     duracao = (fim - inicio).total_seconds()
 
-    print("")
-    print("=" * 80)
-    print("RESUMO FINAL - BLOCO 3")
-    print("=" * 80)
-    print(f"Início: {inicio.strftime('%d/%m/%Y %H:%M:%S')}")
-    print(f"Fim: {fim.strftime('%d/%m/%Y %H:%M:%S')}")
-    print(f"Duração total: {duracao:.1f}s")
-    print(f"Planilhas com sucesso: {len(sucessos)}")
-    print(f"Planilhas com erro: {len(erros)}")
+    logging.info("=" * 80)
+    logging.info("RESUMO FINAL - BLOCO 3")
+    logging.info("=" * 80)
+    logging.info(f"Início: {inicio.strftime('%d/%m/%Y %H:%M:%S')}")
+    logging.info(f"Fim: {fim.strftime('%d/%m/%Y %H:%M:%S')}")
+    logging.info(f"Duração total: {duracao:.1f}s")
+    logging.info(f"Planilhas com sucesso: {len(sucessos)}")
+    logging.info(f"Planilhas com erro: {len(erros)}")
 
     if sucessos:
-        print("")
-        print("Planilhas concluídas com sucesso:")
+        logging.info("Planilhas concluídas com sucesso:")
         for item in sucessos:
-            print(f"- {item['nome']} | {item['id']} | BE: {item['valor_be']}")
+            logging.info(f"- {item['nome']} | {item['id']} | BE: {item['valor_be']}")
 
     if erros:
-        print("")
-        print("Planilhas com erro:")
+        logging.info("Planilhas com erro:")
         for item in erros:
-            print(
+            logging.info(
                 f"- {item['nome']} | {item['id']} | "
                 f"BE: {item['valor_be']} | Erro: {item['erro']}"
             )
@@ -948,8 +944,7 @@ def main() -> None:
             f"Verifique o log acima."
         )
 
-    print("")
-    print("Todas as planilhas foram processadas com sucesso no Bloco 3.")
+    logging.info("Todas as planilhas foram processadas com sucesso no Bloco 3.")
 
 
 if __name__ == "__main__":

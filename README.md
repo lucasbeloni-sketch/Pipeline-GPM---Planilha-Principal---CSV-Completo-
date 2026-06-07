@@ -84,6 +84,11 @@ teste sem editar código).
 | `CONSULTA_SPREADSHEET_ID` | `189JPW…` | Planilha atualizada com os dados. |
 | `CONSULTA_SHEET_NAME` | `BD_ConsultaServ` | Aba de destino. |
 | `UPLOAD_BANCO_PARA_DRIVE` | `true` | Se `true`, também envia o CSV ao Drive. |
+| `KEEP_COL_POS_1BASED` | `47,6,27,50,52,68,70` | Posições (1-based) das colunas mantidas, na ordem. |
+| `KEEP_COLS_BY_NAME` | — | Alternativa por nome de cabeçalho (lista separada por vírgulas). Se definida, tem prioridade sobre as posições. |
+
+> A seleção por posição loga, a cada execução, o cabeçalho real encontrado em
+> cada posição, facilitando detectar mudanças na ordem das colunas de origem.
 
 ### `bloco3_plan_principal.py`
 
@@ -123,11 +128,22 @@ Definido em `.github/workflows/pipeline.yml`:
 
 - Disparo **manual** (`workflow_dispatch`). O agendamento por `cron` está
   comentado no momento.
+- Input opcional **`wait_seconds`** (default `120`): espera entre as etapas
+  para dar tempo de propagação no Drive/Sheets. Exposto como env
+  `STEP_WAIT_SECONDS` nos passos de `sleep`.
 - Requer o secret **`GOOGLE_CREDENTIALS_B64`** no repositório.
 - Python 3.11; instala `requirements.txt`; executa os três scripts em ordem.
+- Actions: `actions/checkout@v6` e `actions/setup-python@v6` (Node 24).
+
+## Logging
+
+Os scripts usam o módulo `logging` (configurado em `common.py` via
+`setup_logging()`), com formato `data [NÍVEL] mensagem` em stdout. Falhas
+transitórias e formatações que não puderam ser aplicadas saem como `WARNING`;
+erros de processamento como `ERROR`.
 
 ## Dependências
 
-Listadas em `requirements.txt` com faixas de versão conservadoras. Para
-reprodutibilidade total, fixe as versões exatas (`pip freeze`) após uma
-execução bem-sucedida.
+Listadas em `requirements.txt` com versões fixadas (`==`) a partir de uma
+execução bem-sucedida no CI. Para atualizar, rode o pipeline, confirme o
+sucesso e refixe via `pip freeze`.

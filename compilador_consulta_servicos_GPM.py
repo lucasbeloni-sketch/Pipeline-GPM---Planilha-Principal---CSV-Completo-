@@ -288,6 +288,12 @@ def parse_date_por_arquivo(df: pd.DataFrame, col_data: str, col_arquivo: str) ->
     for arquivo, idxs in df.groupby(col_arquivo).groups.items():
         ext_grp = extracted.loc[idxs]
 
+        # Nenhuma data reconhecida no arquivo: mantém NaT e evita operações
+        # .str sobre uma série inteiramente NaN (que seriam inválidas).
+        if ext_grp.dropna().empty:
+            logging.info(f"[DATA] arquivo_origem={arquivo} | nenhuma data reconhecida | amostras_validas=0")
+            continue
+
         formato = inferir_formato_por_arquivo(ext_grp)
 
         # ISO (yyyy/mm/dd) sempre tenta primeiro

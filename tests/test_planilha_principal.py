@@ -165,6 +165,54 @@ def test_merge_csvs_vazio():
     assert cpp.merge_csvs([]) == []
 
 
+def test_merge_csvs_delimitador_ponto_e_virgula():
+    c1 = "h1;h2;h3\na;b;c\nd;e;f\n"
+    c2 = "h1;h2;h3\ng;h;i\n"
+    resultado = cpp.merge_csvs([c1, c2])
+    assert resultado[0] == ["h1", "h2", "h3"]
+    assert ["a", "b", "c"] in resultado
+    assert ["g", "h", "i"] in resultado
+    assert all(len(r) == 3 for r in resultado)
+    assert sum(1 for r in resultado if r == ["h1", "h2", "h3"]) == 1
+
+
+def test_merge_csvs_delimitador_tab():
+    c1 = "h1\th2\na\tb\nc\td\n"
+    resultado = cpp.merge_csvs([c1])
+    assert resultado[0] == ["h1", "h2"]
+    assert ["a", "b"] in resultado
+    assert ["c", "d"] in resultado
+
+
+def test_merge_csvs_cabecalhos_divergentes_mantem_segundo_header():
+    c1 = "h1,h2\na,b\n"
+    c2 = "x1,x2\nc,d\n"
+    resultado = cpp.merge_csvs([c1, c2])
+    # cabeçalho diferente => o header do segundo arquivo é preservado
+    assert ["h1", "h2"] in resultado
+    assert ["x1", "x2"] in resultado
+    assert ["a", "b"] in resultado
+    assert ["c", "d"] in resultado
+
+
+def test_merge_csvs_larguras_diferentes_preenche_com_vazio():
+    # headers diferentes (para não deduplicar) e larguras distintas
+    c1 = "h1,h2\na,b\n"
+    c2 = "x1,x2,x3\nc,d,e\n"
+    resultado = cpp.merge_csvs([c1, c2])
+    # todas as linhas são padronizadas para a maior largura (3)
+    assert all(len(r) == 3 for r in resultado)
+    assert ["a", "b", ""] in resultado
+    assert ["c", "d", "e"] in resultado
+
+
+def test_merge_csvs_ignora_conteudo_vazio():
+    c1 = "h1,h2\na,b\n"
+    resultado = cpp.merge_csvs([c1, "", "   \n"])
+    assert resultado[0] == ["h1", "h2"]
+    assert ["a", "b"] in resultado
+
+
 def test_get_first_csv_row_raw():
     assert cpp.get_first_csv_row_raw("a;b;c\nd;e;f") == "a;b;c"
 

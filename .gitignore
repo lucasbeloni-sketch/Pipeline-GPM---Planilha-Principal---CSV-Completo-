@@ -33,3 +33,10 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# ==== Ferramentas locais ====
+# Config/memória local do agente (Claude Code) — não versionar.
+.claude/
+# Cobertura de testes.
+.coverage
+htmlcov/

@@ -45,22 +45,23 @@ TARGET_COLUMNS = [
     "total_servicos",
 ]
 
-# Seleção por POSIÇÃO (1-based) é o padrão, pois os cabeçalhos das CSVs de
-# origem não são estáveis/conhecidos. As posições podem ser sobrescritas por
-# env var (lista separada por vírgulas), e DEVEM mapear 1:1 em TARGET_COLUMNS.
+# Seleção por NOME de cabeçalho é o padrão (mais robusta a reordenação de
+# colunas). Os cabeçalhos das CSVs de origem coincidem com TARGET_COLUMNS.
+# Pode ser sobrescrita por env var; defina KEEP_COLS_BY_NAME="" (vazia) para
+# cair no fallback por posição (KEEP_COL_POS_1BASED).
+KEEP_COLS_BY_NAME = [
+    n.strip()
+    for n in os.getenv("KEEP_COLS_BY_NAME", ",".join(TARGET_COLUMNS)).split(",")
+    if n.strip()
+]
+
+# Fallback por POSIÇÃO (1-based), usado quando KEEP_COLS_BY_NAME está vazia.
+# As posições podem ser sobrescritas por env var e DEVEM mapear 1:1 em
+# TARGET_COLUMNS.
 KEEP_COL_POS_1BASED = [
     int(p.strip())
     for p in os.getenv("KEEP_COL_POS_1BASED", "47,6,27,50,52,68,70").split(",")
     if p.strip()
-]
-
-# Alternativa mais robusta: selecionar por NOME de cabeçalho. Se KEEP_COLS_BY_NAME
-# for definida (lista separada por vírgulas, na ordem de TARGET_COLUMNS), ela tem
-# prioridade sobre a seleção por posição.
-KEEP_COLS_BY_NAME = [
-    n.strip()
-    for n in os.getenv("KEEP_COLS_BY_NAME", "").split(",")
-    if n.strip()
 ]
 
 # =========================

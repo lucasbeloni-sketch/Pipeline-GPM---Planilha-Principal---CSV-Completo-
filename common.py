@@ -2,6 +2,7 @@
 Utilitários compartilhados pelos scripts do pipeline.
 
 Centraliza o que era duplicado entre os três compiladores:
+- configuração de logging;
 - carregamento das credenciais da service account (secret ou arquivo local);
 - execução de requisições do google-api-python-client com retry/backoff.
 
@@ -10,13 +11,33 @@ script, pois depende de outra biblioteca e de outra assinatura.
 """
 
 import os
+import sys
 import json
 import time
 import base64
 import socket
+import logging
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.errors import HttpError
+
+
+def setup_logging(level=logging.INFO) -> None:
+    """
+    Configura o logging para stdout com nível e horário. Idempotente:
+    chamadas repetidas (ou de múltiplos scripts) não duplicam handlers.
+    """
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        stream=sys.stdout,
+    )
+
+
+# Configura o logging assim que o módulo é importado, garantindo que mesmo
+# logs de nível de módulo dos scripts sejam capturados.
+setup_logging()
 
 # Caminho do arquivo de credenciais para execução local.
 # Honra GOOGLE_APPLICATION_CREDENTIALS quando definido (padrão do bloco3).
@@ -38,12 +59,12 @@ def load_service_account_credentials(scopes) -> Credentials:
     """
     credentials_b64 = os.getenv("GOOGLE_CREDENTIALS_B64", "").strip()
     if credentials_b64:
-        print("Usando credenciais da variável GOOGLE_CREDENTIALS_B64...")
+        logging.info("Usando credenciais da variável GOOGLE_CREDENTIALS_B64...")
         info = json.loads(base64.b64decode(credentials_b64).decode("utf-8"))
         return Credentials.from_service_account_info(info, scopes=scopes)
 
     if os.path.exists(LOCAL_CREDENTIALS_FILE):
-        print(f"Usando credenciais do arquivo local: {LOCAL_CREDENTIALS_FILE}")
+        logging.info(f"Usando credenciais do arquivo local: {LOCAL_CREDENTIALS_FILE}")
         return Credentials.from_service_account_file(LOCAL_CREDENTIALS_FILE, scopes=scopes)
 
     raise FileNotFoundError(
@@ -68,13 +89,13 @@ def execute_with_retries(request, description: str = "requisição"):
             if not retryable or attempt == API_MAX_RETRIES - 1:
                 raise
             wait_seconds = 2 ** attempt
-            print(f"[AVISO] Falha HTTP em {description} (status={status}). Tentando novamente em {wait_seconds}s...")
+            logging.warning(f"Falha HTTP em {description} (status={status}). Tentando novamente em {wait_seconds}s...")
             time.sleep(wait_seconds)
         except (TimeoutError, socket.timeout, OSError) as e:
             last_error = e
             if attempt == API_MAX_RETRIES - 1:
                 raise
             wait_seconds = 2 ** attempt
-            print(f"[AVISO] Timeout/erro de rede em {description}. Tentando novamente em {wait_seconds}s...")
+            logging.warning(f"Timeout/erro de rede em {description}. Tentando novamente em {wait_seconds}s...")
             time.sleep(wait_seconds)
     raise last_error

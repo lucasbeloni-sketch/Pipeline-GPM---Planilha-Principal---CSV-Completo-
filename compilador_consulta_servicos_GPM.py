@@ -1,4 +1,5 @@
 import os
+import logging
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -33,7 +34,34 @@ READ_CSV_KWARGS = dict(
     engine="python"
 )
 
-KEEP_COL_POS_1BASED = [47, 6, 27, 50, 52, 68, 70]
+# Nomes finais das colunas mantidas, na ordem.
+TARGET_COLUMNS = [
+    "centro_servico",
+    "Nota",
+    "cod_pep_obra",
+    "equipe",
+    "obs_servico",
+    "dta_exec_srv",
+    "total_servicos",
+]
+
+# Seleção por POSIÇÃO (1-based) é o padrão, pois os cabeçalhos das CSVs de
+# origem não são estáveis/conhecidos. As posições podem ser sobrescritas por
+# env var (lista separada por vírgulas), e DEVEM mapear 1:1 em TARGET_COLUMNS.
+KEEP_COL_POS_1BASED = [
+    int(p.strip())
+    for p in os.getenv("KEEP_COL_POS_1BASED", "47,6,27,50,52,68,70").split(",")
+    if p.strip()
+]
+
+# Alternativa mais robusta: selecionar por NOME de cabeçalho. Se KEEP_COLS_BY_NAME
+# for definida (lista separada por vírgulas, na ordem de TARGET_COLUMNS), ela tem
+# prioridade sobre a seleção por posição.
+KEEP_COLS_BY_NAME = [
+    n.strip()
+    for n in os.getenv("KEEP_COLS_BY_NAME", "").split(",")
+    if n.strip()
+]
 
 # =========================
 # AUTH
@@ -129,9 +157,54 @@ def upload_or_update_banco(drive_service, folder_id, drive_id, local_path, filen
 # =========================
 # DATA HELPERS
 # =========================
-def keep_only_columns_by_position(df, positions_1based):
-    idx = [p - 1 for p in positions_1based]
-    return df.iloc[:, idx]
+def select_target_columns(df):
+    """
+    Seleciona e renomeia as colunas de interesse para TARGET_COLUMNS.
+
+    Usa nomes de cabeçalho (KEEP_COLS_BY_NAME) quando configurado; caso
+    contrário, seleciona por posição (KEEP_COL_POS_1BASED). Em ambos os modos
+    valida a configuração e registra o mapeamento, para que mudanças na ordem
+    das colunas de origem fiquem detectáveis no log.
+    """
+    if KEEP_COLS_BY_NAME:
+        if len(KEEP_COLS_BY_NAME) != len(TARGET_COLUMNS):
+            raise ValueError(
+                f"KEEP_COLS_BY_NAME tem {len(KEEP_COLS_BY_NAME)} nome(s), "
+                f"esperado {len(TARGET_COLUMNS)} (um por coluna de TARGET_COLUMNS)."
+            )
+        ausentes = [c for c in KEEP_COLS_BY_NAME if c not in df.columns]
+        if ausentes:
+            raise KeyError(
+                f"Colunas não encontradas no CSV: {ausentes}. "
+                f"Cabeçalhos disponíveis: {list(df.columns)}"
+            )
+        logging.info(f"Selecionando colunas por nome: {KEEP_COLS_BY_NAME} -> {TARGET_COLUMNS}")
+        selecionado = df.loc[:, KEEP_COLS_BY_NAME].copy()
+        selecionado.columns = TARGET_COLUMNS
+        return selecionado
+
+    if len(KEEP_COL_POS_1BASED) != len(TARGET_COLUMNS):
+        raise ValueError(
+            f"KEEP_COL_POS_1BASED tem {len(KEEP_COL_POS_1BASED)} posição(ões), "
+            f"esperado {len(TARGET_COLUMNS)} (uma por coluna de TARGET_COLUMNS)."
+        )
+    fora = [p for p in KEEP_COL_POS_1BASED if p < 1 or p > df.shape[1]]
+    if fora:
+        raise IndexError(
+            f"Posições fora do intervalo 1..{df.shape[1]}: {fora}. "
+            f"O CSV consolidado tem {df.shape[1]} coluna(s)."
+        )
+    idx = [p - 1 for p in KEEP_COL_POS_1BASED]
+    nomes_origem = [df.columns[i] for i in idx]
+    # Loga o cabeçalho real em cada posição para detectar mudança de ordem.
+    mapeamento = ", ".join(
+        f"pos {p} ('{nome}') -> {alvo}"
+        for p, nome, alvo in zip(KEEP_COL_POS_1BASED, nomes_origem, TARGET_COLUMNS)
+    )
+    logging.info(f"Selecionando colunas por posição: {mapeamento}")
+    selecionado = df.iloc[:, idx].copy()
+    selecionado.columns = TARGET_COLUMNS
+    return selecionado
 
 def to_number_ptbr(value):
     if value is None:
@@ -235,7 +308,7 @@ def parse_date_por_arquivo(df: pd.DataFrame, col_data: str, col_arquivo: str) ->
             )
 
         amostras_validas = parsed_final.loc[idxs].notna().sum()
-        print(f"[DATA] arquivo_origem={arquivo} | formato_inferido={formato} | amostras_validas={amostras_validas}")
+        logging.info(f"[DATA] arquivo_origem={arquivo} | formato_inferido={formato} | amostras_validas={amostras_validas}")
 
     return parsed_final
 
@@ -297,7 +370,7 @@ def main():
     )
 
     drive_id = folder["driveId"]
-    print(f"[OK] Pasta: {folder['name']}")
+    logging.info(f"Pasta: {folder['name']}")
 
     files = list_files(drive_service, NEW_FOLDER_ID, drive_id)
 
@@ -307,7 +380,7 @@ def main():
         and f["name"] != OUTPUT_CSV_NAME
     ]
 
-    print(f"[INFO] CSVs encontrados: {len(csv_files)}")
+    logging.info(f"CSVs encontrados: {len(csv_files)}")
 
     dfs = []
     temp_files = []
@@ -322,7 +395,7 @@ def main():
             df["arquivo_origem"] = name
             dfs.append(df)
         except Exception as e:
-            print(f"[ERRO] {name}: {e}")
+            logging.error(f"Falha ao ler CSV {name}: {e}")
 
     for f in temp_files:
         try:
@@ -331,24 +404,14 @@ def main():
             pass
 
     if not dfs:
-        print("[ERRO] Nenhum CSV válido.")
+        logging.error("Nenhum CSV válido.")
         return
 
     banco_df = pd.concat(dfs, ignore_index=True).drop_duplicates()
 
     origem_col = banco_df["arquivo_origem"].copy()
 
-    banco_df = keep_only_columns_by_position(banco_df, KEEP_COL_POS_1BASED)
-
-    banco_df.columns = [
-        "centro_servico",
-        "Nota",
-        "cod_pep_obra",
-        "equipe",
-        "obs_servico",
-        "dta_exec_srv",
-        "total_servicos"
-    ]
+    banco_df = select_target_columns(banco_df)
 
     banco_df["arquivo_origem"] = origem_col.values
 
@@ -363,7 +426,7 @@ def main():
     total = len(banco_df)
     validas = banco_df["dta_exec_srv"].notna().sum()
     invalidas = total - validas
-    print(f"[DATA] Total: {total} | Válidas: {validas} | Inválidas: {invalidas}")
+    logging.info(f"[DATA] Total: {total} | Válidas: {validas} | Inválidas: {invalidas}")
 
     banco_df = banco_df.sort_values(
         by="dta_exec_srv",
@@ -393,9 +456,9 @@ def main():
             local_path=OUTPUT_CSV_NAME,
             filename=OUTPUT_CSV_NAME
         )
-        print(f"[OK] BANCO.csv enviado ao Drive ({action}).")
+        logging.info(f"BANCO.csv enviado ao Drive ({action}).")
 
-    print("[OK] Processo finalizado com sucesso.")
+    logging.info("Processo finalizado com sucesso.")
 
 if __name__ == "__main__":
     main()

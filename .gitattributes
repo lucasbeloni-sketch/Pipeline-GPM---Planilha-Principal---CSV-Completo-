@@ -1,0 +1,10 @@
+# Normaliza quebras de linha: o repositório guarda sempre LF, independente do SO.
+# Silencia os avisos "LF will be replaced by CRLF" no Windows (core.autocrlf=true).
+* text=auto eol=lf
+
+# Arquivos binários comuns não devem sofrer conversão de quebra de linha.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.xlsx binary
+*.zip binary

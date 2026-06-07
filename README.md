@@ -84,11 +84,11 @@ teste sem editar código).
 | `CONSULTA_SPREADSHEET_ID` | `189JPW…` | Planilha atualizada com os dados. |
 | `CONSULTA_SHEET_NAME` | `BD_ConsultaServ` | Aba de destino. |
 | `UPLOAD_BANCO_PARA_DRIVE` | `true` | Se `true`, também envia o CSV ao Drive. |
-| `KEEP_COL_POS_1BASED` | `47,6,27,50,52,68,70` | Posições (1-based) das colunas mantidas, na ordem. |
-| `KEEP_COLS_BY_NAME` | — | Alternativa por nome de cabeçalho (lista separada por vírgulas). Se definida, tem prioridade sobre as posições. |
+| `KEEP_COLS_BY_NAME` | `centro_servico,Nota,cod_pep_obra,equipe,obs_servico,dta_exec_srv,total_servicos` | **Padrão**: seleção por nome de cabeçalho (robusta a reordenação). Defina como vazia (`""`) para cair no fallback por posição. |
+| `KEEP_COL_POS_1BASED` | `47,6,27,50,52,68,70` | Fallback por posição (1-based), usado quando `KEEP_COLS_BY_NAME` está vazia. |
 
-> A seleção por posição loga, a cada execução, o cabeçalho real encontrado em
-> cada posição, facilitando detectar mudanças na ordem das colunas de origem.
+> A seleção (por nome ou posição) loga, a cada execução, o mapeamento aplicado,
+> facilitando detectar mudanças nas colunas de origem.
 
 ### `bloco3_plan_principal.py`
 

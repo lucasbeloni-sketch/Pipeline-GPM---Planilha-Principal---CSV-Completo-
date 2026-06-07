@@ -33,6 +33,9 @@ def setup_logging(level=logging.INFO) -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
         stream=sys.stdout,
     )
+    # Silencia ruído INFO de bibliotecas de terceiros (ex.: a mensagem
+    # "file_cache is only supported with oauth2client<4.0.0" do googleapiclient).
+    logging.getLogger("googleapiclient.discovery_cache").setLevel(logging.WARNING)
 
 
 # Configura o logging assim que o módulo é importado, garantindo que mesmo

@@ -37,6 +37,8 @@ Thumbs.db
 # ==== Ferramentas locais ====
 # Config/memória local do agente (Claude Code) — não versionar.
 .claude/
+# Skills locais do agente (caveman/cavecrew) — tooling local, não do projeto.
+.agents/
 # Cobertura de testes.
 .coverage
 htmlcov/

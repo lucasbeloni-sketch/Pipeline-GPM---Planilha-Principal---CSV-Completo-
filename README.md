@@ -100,6 +100,11 @@ teste sem editar código).
 | `ABA_LISTA_PLANILHAS` | `BD_Planilhas` | Aba com nome/ID/valor BE das planilhas. |
 | `CHUNK_SIZE` | `5000` | Linhas por bloco ao escrever fórmulas. |
 | `CALC_WAIT_SECONDS` | `15` | Espera para o Sheets recalcular as fórmulas. |
+| `VERIFICAR_PROPAGACAO` | `true` | Antes de congelar, valida que o `BD_Serv_GPM` da unidade refletiu os dados do master via IMPORTRANGE. |
+| `PROPAGACAO_MODO` | `linhas` | `linhas`: compara nº de linhas (robusto a diferenças de renderização). `hash`: igualdade byte a byte (estrito). |
+| `ABA_SERV_GPM` | `BD_Serv_GPM` | Aba da unidade alimentada por IMPORTRANGE; a origem no master é descoberta lendo a fórmula de `A1`. |
+| `PROPAGACAO_TIMEOUT_SECONDS` | `300` | Tempo máximo aguardando a propagação de uma unidade antes de registrá-la como erro. |
+| `PROPAGACAO_POLL_INTERVAL` | `10` | Intervalo entre verificações de propagação. |
 
 ### `compilador_planilha_principal.py`
 
@@ -130,9 +135,12 @@ Definido em `.github/workflows/pipeline.yml`:
 
 - Disparo **manual** (`workflow_dispatch`). O agendamento por `cron` está
   comentado no momento.
-- Input opcional **`wait_seconds`** (default `120`): espera entre as etapas
-  para dar tempo de propagação no Drive/Sheets. Exposto como env
-  `STEP_WAIT_SECONDS` nos passos de `sleep`.
+- Input opcional **`wait_seconds`** (default `30`): espera de aquecimento entre
+  as etapas. Exposto como env `STEP_WAIT_SECONDS` nos passos de `sleep`. A
+  correção da propagação do IMPORTRANGE não depende mais desse tempo: o
+  `bloco3` valida, por unidade, que a aba `BD_Serv_GPM` refletiu os dados do
+  master antes de congelar (ver `VERIFICAR_PROPAGACAO`, `PROPAGACAO_MODO`,
+  `PROPAGACAO_TIMEOUT_SECONDS`, `PROPAGACAO_POLL_INTERVAL`).
 - Requer o secret **`GOOGLE_CREDENTIALS_B64`** no repositório.
 - Python 3.11; instala `requirements.txt`; executa os três scripts em ordem.
 - Actions: `actions/checkout@v6` e `actions/setup-python@v6` (Node 24).

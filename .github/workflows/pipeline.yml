@@ -12,9 +12,9 @@ on:
   workflow_dispatch:        # Permite rodar manualmente pelo painel do GitHub
     inputs:
       wait_seconds:
-        description: "Espera (s) entre as etapas, para propagacao no Drive/Sheets"
+        description: "Espera (s) entre as etapas. So aquecimento: o bloco3 valida a propagacao do IMPORTRANGE por conta propria."
         required: false
-        default: "120"
+        default: "30"
 jobs:
   rodar-pipeline:
     runs-on: ubuntu-latest
@@ -23,7 +23,7 @@ jobs:
       TZ: America/Sao_Paulo
       PYTHONUNBUFFERED: '1'
       GOOGLE_CREDENTIALS_B64: ${{ secrets.GOOGLE_CREDENTIALS_B64 }}
-      STEP_WAIT_SECONDS: ${{ github.event.inputs.wait_seconds || '120' }}
+      STEP_WAIT_SECONDS: ${{ github.event.inputs.wait_seconds || '30' }}
     steps:
       - name: Checkout do repositório
         uses: actions/checkout@v6

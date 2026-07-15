@@ -671,6 +671,26 @@ def _ler_assinatura(worksheet: gspread.Worksheet, range_a1: str) -> tuple[int, s
     return assinatura_valores(ler_range(worksheet, range_a1))
 
 
+def propagacao_confirmada(
+    sig_origem: tuple[int, str],
+    sig_unidade: tuple[int, str],
+    usar_hash: bool,
+) -> bool:
+    """
+    Decide se o IMPORTRANGE já propagou, comparando as assinaturas da origem
+    (master) e da unidade.
+
+    usar_hash=True  -> igualdade byte a byte (nº de linhas + sha1).
+    usar_hash=False -> compara só o nº de linhas (default), ignorando
+                       diferenças de renderização que fazem o hash divergir
+                       mesmo com os dados corretos.
+    """
+    if usar_hash:
+        return sig_origem == sig_unidade
+
+    return sig_origem[0] == sig_unidade[0]
+
+
 def aguardar_propagacao_importrange(
     client: gspread.Client,
     ss_dest: gspread.Spreadsheet,
@@ -735,13 +755,7 @@ def aguardar_propagacao_importrange(
         sig_origem = _ler_assinatura(origem_aba, celulas)
         sig_unidade = _ler_assinatura(aba_serv, celulas)
 
-        if usar_hash:
-            propagado = sig_origem == sig_unidade
-        else:
-            # Compara só a contagem de linhas; ignora diferença de renderização.
-            propagado = sig_origem[0] == sig_unidade[0]
-
-        if propagado:
+        if propagacao_confirmada(sig_origem, sig_unidade, usar_hash):
             logging.info(
                 f"Propagação confirmada (tentativa {tentativa}): "
                 f"{sig_unidade[0]} linhas. "

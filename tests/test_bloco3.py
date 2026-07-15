@@ -113,3 +113,27 @@ def test_assinatura_sensivel_ao_conteudo():
 def test_assinatura_vazio():
     n, _ = b3.assinatura_valores([["", ""]])
     assert n == 0
+
+
+# =========================
+# propagacao_confirmada
+# =========================
+def test_propagacao_modo_linhas_ignora_hash():
+    # Mesma contagem, hash diferente (diferença de renderização) -> confirmado.
+    assert b3.propagacao_confirmada((18713, "aaa"), (18713, "bbb"), usar_hash=False) is True
+
+
+def test_propagacao_modo_linhas_contagem_diferente():
+    # Ainda carregando: contagens diferentes -> não confirmado.
+    assert b3.propagacao_confirmada((18713, "aaa"), (12000, "aaa"), usar_hash=False) is False
+
+
+def test_propagacao_modo_hash_exige_igualdade_total():
+    assert b3.propagacao_confirmada((100, "x"), (100, "x"), usar_hash=True) is True
+    assert b3.propagacao_confirmada((100, "x"), (100, "y"), usar_hash=True) is False
+
+
+def test_propagacao_ambos_vazios():
+    # Unidade legitimamente sem dados: 0 == 0 nos dois modos.
+    assert b3.propagacao_confirmada((0, "z"), (0, "z"), usar_hash=False) is True
+    assert b3.propagacao_confirmada((0, "z"), (0, "z"), usar_hash=True) is True

@@ -44,8 +44,8 @@ CALC_WAIT_SECONDS = int(os.getenv("CALC_WAIT_SECONDS", "15"))
 # BD_Serv_GPM da unidade bate com a da aba de origem no master antes de seguir.
 VERIFICAR_PROPAGACAO = os.getenv("VERIFICAR_PROPAGACAO", "true").strip().lower() in {"1", "true", "yes"}
 ABA_SERV_GPM = os.getenv("ABA_SERV_GPM", "BD_Serv_GPM")
-# Range comparado; deve casar com o range do IMPORTRANGE (ex.: "GUA_SERV!A1:G").
-RANGE_SERV_GPM = os.getenv("RANGE_SERV_GPM", "A1:G")
+# O range comparado é descoberto na própria fórmula IMPORTRANGE de A1 (varia por
+# unidade: A1:G, A1:C, A1:D...), então não é configurável.
 # Tempo máximo (s) aguardando a propagação de UMA unidade antes de desistir.
 PROPAGACAO_TIMEOUT_SECONDS = int(os.getenv("PROPAGACAO_TIMEOUT_SECONDS", "300"))
 # Intervalo (s) entre verificações.
@@ -701,7 +701,18 @@ def aguardar_propagacao_importrange(
     )
 
     ss_origem = executar_com_retry(lambda: client.open_by_key(origem_id))
-    origem_tab = origem_range.split("!", 1)[0]
+
+    # origem_range vem da fórmula, ex.: "GUA_SERV!A1:G".
+    # A aba (ex.: GUA_SERV) varia por unidade e o range de células também
+    # (A1:G, A1:C, A1:D...). Separamos: a aba para abrir no master e a parte de
+    # células — que é a MESMA nos dois lados, pois o IMPORTRANGE espelha 1:1.
+    # Passar o range com "!" para worksheet.get() causaria dupla referência de
+    # aba ("'GUA_SERV'!GUA_SERV!A1:G"), então usamos só as células.
+    if "!" in origem_range:
+        origem_tab, celulas = origem_range.split("!", 1)
+    else:
+        origem_tab, celulas = ABA_SERV_GPM, origem_range
+
     origem_aba = abrir_aba(ss_origem, origem_tab)
 
     inicio = time.monotonic()
@@ -709,8 +720,8 @@ def aguardar_propagacao_importrange(
 
     while True:
         tentativa += 1
-        sig_origem = _ler_assinatura(origem_aba, origem_range)
-        sig_unidade = _ler_assinatura(aba_serv, RANGE_SERV_GPM)
+        sig_origem = _ler_assinatura(origem_aba, celulas)
+        sig_unidade = _ler_assinatura(aba_serv, celulas)
 
         if sig_origem == sig_unidade:
             logging.info(

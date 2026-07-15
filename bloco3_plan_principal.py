@@ -40,9 +40,20 @@ CALC_WAIT_SECONDS = int(os.getenv("CALC_WAIT_SECONDS", "15"))
 # A aba BD_Serv_GPM de cada unidade é um IMPORTRANGE do master. Como o
 # IMPORTRANGE recalcula de forma assíncrona, esperar um tempo fixo é frágil:
 # se congelarmos as fórmulas antes da propagação, gravamos valores velhos/0.
-# Em vez de dormir cego, verificamos que a assinatura (nº de linhas + hash) do
-# BD_Serv_GPM da unidade bate com a da aba de origem no master antes de seguir.
+# Em vez de dormir cego, esperamos até o BD_Serv_GPM da unidade refletir a aba
+# de origem no master.
+#
+# Sinal de comparação (PROPAGACAO_MODO):
+#   "linhas" (default) — compara o nº de linhas preenchidas. Enquanto o
+#     IMPORTRANGE recarrega ele esvazia/reduz o range, então a contagem sai de
+#     0/parcial e sobe até o total; igualdade = carregado. Robusto a diferenças
+#     de RENDERIZAÇÃO entre a fórmula-fonte e a cópia importada (precisão de
+#     float, serial de data vs texto) que fazem o hash divergir mesmo com os
+#     dados corretos.
+#   "hash" — exige igualdade byte a byte (nº de linhas + sha1). Mais estrito,
+#     porém sensível às diferenças de renderização acima; use só se necessário.
 VERIFICAR_PROPAGACAO = os.getenv("VERIFICAR_PROPAGACAO", "true").strip().lower() in {"1", "true", "yes"}
+PROPAGACAO_MODO = os.getenv("PROPAGACAO_MODO", "linhas").strip().lower()
 ABA_SERV_GPM = os.getenv("ABA_SERV_GPM", "BD_Serv_GPM")
 # O range comparado é descoberto na própria fórmula IMPORTRANGE de A1 (varia por
 # unidade: A1:G, A1:C, A1:D...), então não é configurável.
@@ -715,6 +726,7 @@ def aguardar_propagacao_importrange(
 
     origem_aba = abrir_aba(ss_origem, origem_tab)
 
+    usar_hash = PROPAGACAO_MODO == "hash"
     inicio = time.monotonic()
     tentativa = 0
 
@@ -723,10 +735,17 @@ def aguardar_propagacao_importrange(
         sig_origem = _ler_assinatura(origem_aba, celulas)
         sig_unidade = _ler_assinatura(aba_serv, celulas)
 
-        if sig_origem == sig_unidade:
+        if usar_hash:
+            propagado = sig_origem == sig_unidade
+        else:
+            # Compara só a contagem de linhas; ignora diferença de renderização.
+            propagado = sig_origem[0] == sig_unidade[0]
+
+        if propagado:
             logging.info(
                 f"Propagação confirmada (tentativa {tentativa}): "
-                f"{sig_unidade[0]} linhas."
+                f"{sig_unidade[0]} linhas. "
+                f"(hash origem={sig_origem[1][:8]} unidade={sig_unidade[1][:8]})"
             )
             return
 

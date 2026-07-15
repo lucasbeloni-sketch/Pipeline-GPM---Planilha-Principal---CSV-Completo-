@@ -1,5 +1,7 @@
 import os
+import re
 import time
+import hashlib
 import logging
 import traceback
 from datetime import datetime
@@ -31,6 +33,23 @@ CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "5000"))
 
 # Tempo para aguardar o Google Sheets calcular as fórmulas antes de congelar.
 CALC_WAIT_SECONDS = int(os.getenv("CALC_WAIT_SECONDS", "15"))
+
+# ---------------------------------------------------------
+# Propagação do IMPORTRANGE (BD_Serv_GPM <- master <UNIT>_SERV)
+# ---------------------------------------------------------
+# A aba BD_Serv_GPM de cada unidade é um IMPORTRANGE do master. Como o
+# IMPORTRANGE recalcula de forma assíncrona, esperar um tempo fixo é frágil:
+# se congelarmos as fórmulas antes da propagação, gravamos valores velhos/0.
+# Em vez de dormir cego, verificamos que a assinatura (nº de linhas + hash) do
+# BD_Serv_GPM da unidade bate com a da aba de origem no master antes de seguir.
+VERIFICAR_PROPAGACAO = os.getenv("VERIFICAR_PROPAGACAO", "true").strip().lower() in {"1", "true", "yes"}
+ABA_SERV_GPM = os.getenv("ABA_SERV_GPM", "BD_Serv_GPM")
+# Range comparado; deve casar com o range do IMPORTRANGE (ex.: "GUA_SERV!A1:G").
+RANGE_SERV_GPM = os.getenv("RANGE_SERV_GPM", "A1:G")
+# Tempo máximo (s) aguardando a propagação de UMA unidade antes de desistir.
+PROPAGACAO_TIMEOUT_SECONDS = int(os.getenv("PROPAGACAO_TIMEOUT_SECONDS", "300"))
+# Intervalo (s) entre verificações.
+PROPAGACAO_POLL_INTERVAL = int(os.getenv("PROPAGACAO_POLL_INTERVAL", "10"))
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -587,6 +606,137 @@ def formula_ak(row: int) -> str:
 
 
 # =========================================================
+# PROPAGAÇÃO DO IMPORTRANGE
+# =========================================================
+# Regex tolerante: =IMPORTRANGE("<id>"; "ABA!A1:G")  (aspas simples/duplas, ; ou ,)
+_IMPORTRANGE_RE = re.compile(
+    r'IMPORTRANGE\s*\(\s*["\']([^"\']+)["\']\s*[;,]\s*["\']([^"\']+)["\']',
+    re.IGNORECASE,
+)
+
+
+def extrair_origem_importrange(worksheet: gspread.Worksheet, celula: str = "A1"):
+    """
+    Lê a fórmula IMPORTRANGE de `celula` e retorna (spreadsheet_id, range_a1)
+    da origem, ex.: ("189J...", "GUA_SERV!A1:G"). Retorna None se não houver
+    IMPORTRANGE (aba pode ter sido colada como valores, etc.).
+    """
+    formula = executar_com_retry(
+        lambda: worksheet.acell(celula, value_render_option="FORMULA").value
+    )
+
+    if not formula:
+        return None
+
+    match = _IMPORTRANGE_RE.search(formula)
+
+    if not match:
+        return None
+
+    return match.group(1), match.group(2)
+
+
+def assinatura_valores(valores: list[list]) -> tuple[int, str]:
+    """
+    Assinatura estável de um bloco de valores: (nº de linhas não vazias, sha1).
+    Linhas totalmente vazias no fim não contam, para casar com o get() que as
+    apara nos dois lados da comparação.
+    """
+    linhas = [
+        [as_text(c) for c in (row or [])]
+        for row in valores
+    ]
+
+    while linhas and all(c == "" for c in linhas[-1]):
+        linhas.pop()
+
+    payload = "\n".join("\x1f".join(row) for row in linhas)
+    digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+    return len(linhas), digest
+
+
+def _ler_assinatura(worksheet: gspread.Worksheet, range_a1: str) -> tuple[int, str]:
+    return assinatura_valores(ler_range(worksheet, range_a1))
+
+
+def aguardar_propagacao_importrange(
+    client: gspread.Client,
+    ss_dest: gspread.Spreadsheet,
+    nome_planilha: str,
+) -> None:
+    """
+    Garante que o IMPORTRANGE do BD_Serv_GPM já refletiu os dados novos do
+    master antes de aplicar/congelar as fórmulas. Compara a assinatura do
+    BD_Serv_GPM da unidade com a da aba de origem no master, refazendo a
+    leitura até baterem ou estourar o timeout.
+
+    Levanta RuntimeError no timeout — o chamador registra a unidade em `erros`
+    e segue para as demais, em vez de congelar valores velhos.
+    """
+    if not VERIFICAR_PROPAGACAO:
+        return
+
+    try:
+        aba_serv = ss_dest.worksheet(ABA_SERV_GPM)
+    except WorksheetNotFound:
+        logging.warning(
+            f"Aba '{ABA_SERV_GPM}' não encontrada em '{nome_planilha}'. "
+            f"Pulando verificação de propagação."
+        )
+        return
+
+    origem = extrair_origem_importrange(aba_serv, "A1")
+
+    if origem is None:
+        logging.warning(
+            f"'{ABA_SERV_GPM}' de '{nome_planilha}' sem IMPORTRANGE em A1. "
+            f"Pulando verificação de propagação."
+        )
+        return
+
+    origem_id, origem_range = origem
+    logging.info(
+        f"Verificando propagação do IMPORTRANGE: origem {origem_id} / {origem_range}"
+    )
+
+    ss_origem = executar_com_retry(lambda: client.open_by_key(origem_id))
+    origem_tab = origem_range.split("!", 1)[0]
+    origem_aba = abrir_aba(ss_origem, origem_tab)
+
+    inicio = time.monotonic()
+    tentativa = 0
+
+    while True:
+        tentativa += 1
+        sig_origem = _ler_assinatura(origem_aba, origem_range)
+        sig_unidade = _ler_assinatura(aba_serv, RANGE_SERV_GPM)
+
+        if sig_origem == sig_unidade:
+            logging.info(
+                f"Propagação confirmada (tentativa {tentativa}): "
+                f"{sig_unidade[0]} linhas."
+            )
+            return
+
+        decorrido = time.monotonic() - inicio
+
+        if decorrido >= PROPAGACAO_TIMEOUT_SECONDS:
+            raise RuntimeError(
+                f"Timeout ({PROPAGACAO_TIMEOUT_SECONDS}s) aguardando propagação do "
+                f"IMPORTRANGE em '{nome_planilha}'. "
+                f"origem={sig_origem} unidade={sig_unidade}"
+            )
+
+        logging.info(
+            f"Ainda propagando (tentativa {tentativa}): "
+            f"origem={sig_origem} unidade={sig_unidade}. "
+            f"Nova checagem em {PROPAGACAO_POLL_INTERVAL}s."
+        )
+        time.sleep(PROPAGACAO_POLL_INTERVAL)
+
+
+# =========================================================
 # BLOCO 3 - PLAN_PRINCIPAL
 # =========================================================
 def executar_bloco3_plan_principal(
@@ -838,6 +988,12 @@ def executar_bloco3_para_planilha(
     logging.info("=" * 80)
 
     ss_dest = executar_com_retry(lambda: client.open_by_key(dest_spreadsheet_id))
+
+    aguardar_propagacao_importrange(
+        client=client,
+        ss_dest=ss_dest,
+        nome_planilha=nome_planilha,
+    )
 
     executar_bloco3_plan_principal(
         ss_dest=ss_dest,

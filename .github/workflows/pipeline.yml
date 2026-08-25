@@ -26,9 +26,9 @@ jobs:
       STEP_WAIT_SECONDS: ${{ github.event.inputs.wait_seconds || '30' }}
     steps:
       - name: Checkout do repositório
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Configurar Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.11'
           cache: 'pip'
